@@ -1,0 +1,171 @@
+{
+  "projectType": "framework",
+  "projectName": "Bunli",
+  "projectDescription": "Minimal, type-safe CLI framework for Bun with advanced plugin system and terminal UI components",
+  "theme": "aspen",
+  "primaryColor": "#040404",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "why-bunli",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Getting Started",
+            "pages": [
+              "getting-started/installation",
+              "getting-started/quickstart",
+              "getting-started/your-first-cli"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/commands",
+              "concepts/options",
+              "concepts/handlers",
+              "concepts/configuration",
+              "concepts/error-handling"
+            ]
+          },
+          {
+            "group": "Building CLIs",
+            "pages": [
+              "guides/defining-commands",
+              "guides/working-with-options",
+              "guides/command-groups",
+              "guides/global-flags",
+              "guides/type-generation",
+              "guides/building-binaries"
+            ]
+          },
+          {
+            "group": "Terminal UI",
+            "pages": [
+              "tui/overview",
+              "tui/prompts",
+              "tui/rendering",
+              "tui/components",
+              "tui/interactive-uis"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
+              "plugins/overview",
+              "plugins/creating-plugins",
+              "plugins/plugin-hooks",
+              "plugins/plugin-store",
+              "plugins/ai-detect",
+              "plugins/completions",
+              "plugins/config",
+              "plugins/mcp"
+            ]
+          },
+          {
+            "group": "Toolchain",
+            "pages": [
+              "toolchain/bunli-cli",
+              "toolchain/dev-mode",
+              "toolchain/testing",
+              "toolchain/building",
+              "toolchain/releasing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/core/create-cli",
+              "api/core/define-command",
+              "api/core/option",
+              "api/core/define-config",
+              "api/core/load-config"
+            ]
+          },
+          {
+            "group": "Plugin System",
+            "pages": [
+              "api/plugins/create-plugin",
+              "api/plugins/plugin-types",
+              "api/plugins/plugin-context"
+            ]
+          },
+          {
+            "group": "Runtime",
+            "pages": [
+              "api/runtime/renderer",
+              "api/runtime/prompt",
+              "api/runtime/events"
+            ]
+          },
+          {
+            "group": "TUI Components",
+            "pages": [
+              "api/tui/hooks",
+              "api/tui/components",
+              "api/tui/styling"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utils/validation",
+              "api/utils/errors",
+              "api/utils/type-helpers"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Example Projects",
+            "pages": [
+              "examples/hello-world",
+              "examples/git-tool",
+              "examples/task-runner",
+              "examples/dev-server"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Type-safe command definitions with Zod validation",
+    "Advanced plugin system with typed stores",
+    "OpenTUI-based terminal UI components",
+    "Bun Shell integration for command execution",
+    "Compile to standalone binaries",
+    "Hot-reload development mode",
+    "Shell completions generation",
+    "TypeScript type generation from commands"
+  ],
+  "publicApiSurface": [
+    "createCLI",
+    "defineCommand",
+    "defineGroup",
+    "option",
+    "createPlugin",
+    "defineConfig",
+    "loadConfig",
+    "@bunli/tui components",
+    "@bunli/runtime renderer and prompts",
+    "bunli CLI commands: dev, build, test, init, release, generate"
+  ]
+}
