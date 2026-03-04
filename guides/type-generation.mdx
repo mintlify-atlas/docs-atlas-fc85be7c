@@ -1,0 +1,480 @@
+---
+title: Type Generation
+description: Automatic TypeScript type generation for type-safe command execution
+---
+
+Bunli automatically generates TypeScript types from your command definitions, enabling full type safety and IntelliSense when executing commands programmatically.
+
+## How It Works
+
+Bunli scans your commands directory and generates `.bunli/commands.gen.ts` with type definitions:
+
+<Steps>
+  <Step title="Define commands with schemas">
+    ```typescript
+    // commands/greet.ts
+    import { defineCommand, option } from '@bunli/core'
+    import { z } from 'zod'
+    
+    export default defineCommand({
+      name: 'greet' as const,  // ← Type inference requires 'as const'
+      description: 'Greet someone',
+      options: {
+        name: option(z.string().default('world'), {}),
+        loud: option(z.boolean().default(false), {})
+      },
+      handler: async ({ flags }) => {
+        console.log(`Hello, ${flags.name}!`)
+      }
+    })
+    ```
+  </Step>
+  
+  <Step title="Bunli generates types automatically">
+    ```typescript
+    // .bunli/commands.gen.ts (generated)
+    import type { Command } from '@bunli/core'
+    
+    export interface CommandsByName {
+      greet: Command<{
+        name: { schema: z.ZodDefault<z.ZodString> }
+        loud: { schema: z.ZodDefault<z.ZodBoolean> }
+      }>
+    }
+    
+    declare module '@bunli/core' {
+      interface RegisteredCommands extends CommandsByName {}
+    }
+    ```
+  </Step>
+  
+  <Step title="Use type-safe command execution">
+    ```typescript
+    // cli.ts
+    import { createCLI } from '@bunli/core'
+    
+    const cli = await createCLI()
+    
+    // ✓ Type-safe - IntelliSense knows 'greet' exists
+    await cli.execute('greet', {
+      name: 'Alice',  // ✓ Knows this option exists
+      loud: true      // ✓ Validates type
+    })
+    
+    // ✗ Compile error - unknown command
+    await cli.execute('unknown', {})
+    
+    // ✗ Compile error - invalid option
+    await cli.execute('greet', { invalid: true })
+    ```
+  </Step>
+</Steps>
+
+## Configuration
+
+Configure type generation in `bunli.config.ts`:
+
+```typescript
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'mycli',
+  version: '1.0.0',
+  commands: {
+    entry: './cli.ts',           // Entry file to scan
+    directory: './commands',      // Commands directory
+    generateReport: true          // Generate diagnostic report
+  }
+})
+```
+
+**Source:** `packages/core/src/config.ts:29-49`
+
+## Generator Architecture
+
+The generator follows this flow:
+
+```typescript
+// packages/generator/src/generator.ts
+export class Generator {
+  async run(): Promise<Result<void, GeneratorRunError>> {
+    // 1. Scan for command files
+    const commandFiles = await this.scanCommands()
+    
+    // 2. Parse each command file
+    const { commands, parseErrors } = await this.parseCommands(commandFiles)
+    
+    // 3. Build TypeScript types
+    const typesContent = buildTypes(commands)
+    
+    // 4. Write to output file
+    await this.writeTypes(typesContent)
+    
+    // 5. Generate diagnostic report (optional)
+    if (this.config.generateReport) {
+      await this.writeReport(report)
+    }
+    
+    return Result.ok()
+  }
+}
+```
+
+**Source:** `packages/generator/src/generator.ts:30-93`
+
+## Manual Type Generation
+
+Run type generation explicitly:
+
+```bash
+# Using bunli CLI
+bunli generate
+
+# During build
+bunli build  # Automatically runs type generation
+
+# During development
+bunli dev    # Regenerates types on file changes
+```
+
+**Source:** `packages/cli/src/commands/generate.ts`, `packages/cli/src/commands/build.ts:112-126`
+
+## Type Generation Example
+
+Given these commands:
+
+```typescript
+// commands/build.ts
+export default defineCommand({
+  name: 'build' as const,
+  options: {
+    outdir: option(z.string().default('dist'), {}),
+    minify: option(z.boolean().default(false), {})
+  }
+})
+
+// commands/dev.ts
+export default defineCommand({
+  name: 'dev' as const,
+  options: {
+    port: option(z.coerce.number().default(3000), {}),
+    watch: option(z.boolean().default(true), {})
+  }
+})
+```
+
+Generated types:
+
+```typescript
+// .bunli/commands.gen.ts
+import type { Command } from '@bunli/core'
+import { z } from 'zod'
+
+export interface CommandsByName {
+  build: Command<{
+    outdir: { schema: z.ZodDefault<z.ZodString> }
+    minify: { schema: z.ZodDefault<z.ZodBoolean> }
+  }>
+  dev: Command<{
+    port: { schema: z.ZodDefault<z.ZodNumber> }
+    watch: { schema: z.ZodDefault<z.ZodBoolean> }
+  }>
+}
+
+declare module '@bunli/core' {
+  interface RegisteredCommands extends CommandsByName {}
+}
+```
+
+## Type-Safe Execution
+
+The generated types enable autocomplete and validation:
+
+```typescript
+import { createCLI } from '@bunli/core'
+
+const cli = await createCLI()
+
+// Autocomplete suggests: 'build' | 'dev'
+await cli.execute('build', {
+  outdir: './output',  // ✓ Valid
+  minify: true         // ✓ Valid
+})
+
+// With positional arguments
+await cli.execute('build', ['--watch'], {
+  outdir: './dist'
+})
+
+// Type error - unknown option
+await cli.execute('build', {
+  invalid: true  // ✗ Compile error
+})
+
+// Type error - wrong type
+await cli.execute('dev', {
+  port: 'abc'  // ✗ Compile error (expects number)
+})
+```
+
+**Source:** `packages/core/src/cli.ts:731-779`
+
+## Nested Commands
+
+Type generation works with command groups:
+
+```typescript
+// commands/git/status.ts
+export default defineCommand({
+  name: 'status' as const,
+  options: {
+    detailed: option(z.boolean().default(false), {})
+  }
+})
+
+// commands/git/branch.ts
+export default defineCommand({
+  name: 'branch' as const,
+  options: {
+    name: option(z.string(), {})
+  }
+})
+```
+
+Execute with path syntax:
+
+```typescript
+// Use slash syntax for nested commands
+await cli.execute('git/status', {
+  detailed: true
+})
+
+await cli.execute('git/branch', {
+  name: 'feature/new'
+})
+```
+
+**Source:** `packages/core/src/cli.ts:733-734`
+
+## Generated Store Types
+
+Plugin stores are also type-safe:
+
+```typescript
+// Generated interface for plugin stores
+export interface GeneratedStore {
+  // Plugin store types are merged here
+}
+
+// Access in commands
+const myCommand = defineCommand({
+  name: 'example',
+  handler: async ({ context }) => {
+    // context.store is typed based on loaded plugins
+    if (context?.store.config) {
+      // TypeScript knows about config store
+    }
+  }
+})
+```
+
+**Source:** `packages/core/src/generated.ts`, `packages/core/src/types.ts:206-211`
+
+## Build Integration
+
+Type generation runs automatically during builds:
+
+```typescript
+// packages/cli/src/commands/build.ts
+async function runBuild(flags, spinner, colors) {
+  // Generate types before building
+  const spin = spinner('Generating types...')
+  const generator = new Generator({
+    entry: config.commands?.entry || primaryEntry,
+    directory: config.commands?.directory,
+    outputFile: './.bunli/commands.gen.ts',
+    config,
+    generateReport: config.commands?.generateReport
+  })
+  
+  const result = await generator.run()
+  if (result.isErr()) {
+    spin.fail('Failed to generate types')
+    throw result.error
+  }
+  spin.succeed('Types generated')
+  
+  // Continue with build...
+}
+```
+
+**Source:** `packages/cli/src/commands/build.ts:112-126`
+
+## Development Workflow
+
+Types regenerate automatically in dev mode:
+
+```bash
+# Start dev mode
+bunli dev
+
+# Types regenerate when you:
+# - Add new commands
+# - Modify command options
+# - Change option schemas
+```
+
+The generator watches your commands directory and updates types on changes.
+
+**Source:** `packages/cli/src/commands/dev.ts`
+
+## Diagnostic Report
+
+Enable detailed generation reports:
+
+```typescript
+// bunli.config.ts
+export default defineConfig({
+  commands: {
+    generateReport: true  // Creates .bunli/commands.report.json
+  }
+})
+```
+
+```json
+// .bunli/commands.report.json
+{
+  "commandsParsed": 5,
+  "filesScanned": 8,
+  "skipped": ["commands/utils.ts"],
+  "parseErrors": [],
+  "names": ["build", "dev", "git/branch", "git/status", "test"]
+}
+```
+
+**Source:** `packages/generator/src/generator.ts:72-89`
+
+## Command Scanning
+
+The scanner finds command files:
+
+```typescript
+// packages/generator/src/scanner.ts
+export class CommandScanner {
+  async scanCommands(
+    entry: string,
+    directory?: string
+  ): Promise<Result<string[], ScanError>> {
+    if (directory) {
+      // Scan directory for *.ts files
+      return await this.scanDirectory(directory)
+    } else {
+      // Use entry file imports
+      return await this.scanEntryFile(entry)
+    }
+  }
+}
+```
+
+**Source:** `packages/generator/src/scanner.ts`
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Types not updating">
+    Run `bunli generate` manually to regenerate types. Check that `commands.entry` points to the correct file.
+  </Accordion>
+  
+  <Accordion title="Commands not found in generated types">
+    Ensure your command uses `name: 'commandName' as const` for type inference. Check the diagnostic report for parsing errors.
+  </Accordion>
+  
+  <Accordion title="Type errors in generated file">
+    Make sure all commands export a default `defineCommand()`. Verify that Zod schemas are properly typed.
+  </Accordion>
+  
+  <Accordion title="IntelliSense not working">
+    Restart your TypeScript server (VS Code: Cmd+Shift+P → "TypeScript: Restart TS Server"). Ensure `.bunli/commands.gen.ts` exists.
+  </Accordion>
+</AccordionGroup>
+
+## Testing Generated Types
+
+```typescript
+import { describe, test, expect } from 'bun:test'
+import { createCLI } from '@bunli/core'
+import type { RegisteredCommands } from './.bunli/commands.gen.js'
+
+describe('Generated types', () => {
+  test('commands are registered', async () => {
+    const cli = await createCLI()
+    
+    // Type-safe execution
+    await cli.execute('build', {
+      outdir: './test-dist'
+    })
+    
+    // TypeScript validates this at compile time
+    type Commands = keyof RegisteredCommands
+    const commands: Commands[] = ['build', 'dev', 'test']
+    expect(commands).toContain('build')
+  })
+})
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always use 'as const' on command names">
+    This enables proper type inference:
+    ```typescript
+    name: 'greet' as const  // ✓ Good
+    name: 'greet'           // ✗ Type inference won't work
+    ```
+  </Accordion>
+  
+  <Accordion title="Keep commands in a single directory">
+    Makes scanning and generation more reliable:
+    ```typescript
+    commands/
+      build.ts
+      dev.ts
+      test.ts
+    ```
+  </Accordion>
+  
+  <Accordion title="Export default from command files">
+    The generator expects default exports:
+    ```typescript
+    export default defineCommand({ ... })  // ✓ Good
+    export const myCommand = ...           // ✗ Won't be found
+    ```
+  </Accordion>
+  
+  <Accordion title="Enable generateReport during development">
+    Helps debug type generation issues:
+    ```typescript
+    commands: { generateReport: true }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Defining Commands" icon="terminal" href="/guides/defining-commands">
+    Learn how to define commands with proper type inference
+  </Card>
+  
+  <Card title="Working with Options" icon="sliders" href="/guides/working-with-options">
+    Master Zod schemas for type-safe options
+  </Card>
+  
+  <Card title="Building Binaries" icon="box" href="/guides/building-binaries">
+    Compile your type-safe CLI to executables
+  </Card>
+  
+  <Card title="Command Groups" icon="folder-tree" href="/guides/command-groups">
+    Type generation for nested command structures
+  </Card>
+</CardGroup>

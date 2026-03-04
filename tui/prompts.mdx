@@ -1,0 +1,412 @@
+---
+title: Prompts & Input
+description: Collect user input with prompts, selections, confirmations, and spinners
+---
+
+# Prompts & Input
+
+Bunli provides a comprehensive prompt API through `@bunli/runtime/prompt` for collecting user input in interactive terminals.
+
+## Prompt API
+
+### Text Input
+
+Collect text input from the user:
+
+```typescript
+import { prompt } from '@bunli/runtime/prompt'
+
+const name = await prompt.text('What is your name?', {
+  placeholder: 'John Doe',
+  default: 'Anonymous'
+})
+
+console.log(`Hello, ${name}!`)
+```
+
+#### With Validation
+
+```typescript
+const email = await prompt.text('Email address:', {
+  validate: (value) => {
+    if (!value.includes('@')) {
+      return 'Please enter a valid email'
+    }
+    return true
+  }
+})
+```
+
+#### With Schema Validation
+
+```typescript
+import { z } from 'zod'
+
+const port = await prompt.text('Port number:', {
+  schema: z.coerce.number().int().min(1).max(65535),
+  placeholder: '3000'
+})
+
+console.log(typeof port) // number
+```
+
+### Password Input
+
+Collect sensitive input without echoing to the terminal:
+
+```typescript
+const password = await prompt.password('Enter password:', {
+  validate: (value) => {
+    if (value.length < 8) {
+      return 'Password must be at least 8 characters'
+    }
+    return true
+  }
+})
+```
+
+Features:
+- **Hidden by default** - Characters not displayed
+- **Reveal toggle** - Press `Ctrl+R` to toggle visibility
+- **Automatic terminal echo management**
+
+### Confirmation
+
+Get yes/no confirmation from the user:
+
+```typescript
+const confirmed = await prompt.confirm('Deploy to production?', {
+  default: false
+})
+
+if (confirmed) {
+  await deploy()
+}
+```
+
+### Select (Single Choice)
+
+Present a list of options for single selection:
+
+```typescript
+const env = await prompt.select('Select environment:', {
+  options: [
+    { label: 'Development', value: 'dev', hint: 'Local development' },
+    { label: 'Staging', value: 'staging', hint: 'Pre-production' },
+    { label: 'Production', value: 'prod', hint: 'Live environment' }
+  ],
+  default: 'dev'
+})
+
+console.log(`Selected: ${env}`)
+```
+
+#### Disabled Options
+
+```typescript
+const region = await prompt.select('Select region:', {
+  options: [
+    { label: 'US East', value: 'us-east' },
+    { label: 'US West', value: 'us-west', disabled: true },
+    { label: 'EU Central', value: 'eu-central' }
+  ]
+})
+```
+
+**Navigation:**
+- `↑`/`↓` or `k`/`j` - Move selection
+- `1`-`9` - Quick select by number
+- `Enter` - Confirm selection
+- `Esc` - Cancel
+
+### Multi-Select
+
+Allow multiple selections:
+
+```typescript
+const features = await prompt.multiselect('Select features:', {
+  options: [
+    { label: 'TypeScript', value: 'ts' },
+    { label: 'Testing', value: 'testing' },
+    { label: 'Docker', value: 'docker' },
+    { label: 'CI/CD', value: 'cicd' }
+  ],
+  initialValues: ['ts', 'testing'],
+  min: 1, // Require at least one selection
+  max: 3  // Allow at most three selections
+})
+
+console.log('Selected features:', features)
+```
+
+**Navigation:**
+- `↑`/`↓` or `k`/`j` - Move cursor
+- `Space` - Toggle selection
+- `1`-`9` - Quick toggle by number
+- `Enter` - Submit selections
+- `Esc` - Cancel
+
+## Prompt Helpers
+
+### Intro / Outro
+
+Add decorative headers and footers:
+
+```typescript
+prompt.intro('Setup Wizard')
+
+const name = await prompt.text('Project name:')
+const type = await prompt.select('Project type:', { options })
+
+prompt.outro('Setup complete!')
+```
+
+### Notes
+
+Display formatted information:
+
+```typescript
+prompt.note('Remember to set environment variables', 'Important')
+
+prompt.note(`
+API_KEY: ${apiKey}
+API_URL: ${apiUrl}
+`, 'Configuration')
+```
+
+### Logging
+
+Structured log output:
+
+```typescript
+prompt.log.info('Starting deployment...')
+prompt.log.success('Deployment completed')
+prompt.log.warn('No tests found')
+prompt.log.error('Build failed')
+```
+
+## Spinners
+
+### Basic Spinner
+
+Show progress for long-running operations:
+
+```typescript
+import { spinner } from '@bunli/runtime/prompt'
+
+const s = spinner('Installing dependencies...')
+
+try {
+  await installDependencies()
+  s.succeed('Dependencies installed')
+} catch (error) {
+  s.fail('Installation failed')
+}
+```
+
+### Spinner API
+
+```typescript
+const s = spinner('Processing...')
+
+s.start()                    // Start animation
+s.update('Still processing') // Update message
+s.stop()                     // Stop and clear
+s.succeed('Success!')        // Stop with success icon
+s.fail('Failed!')            // Stop with error icon
+s.warn('Warning!')           // Stop with warning icon
+s.info('Info!')              // Stop with info icon
+```
+
+### Spinner Options
+
+```typescript
+const s = spinner({
+  text: 'Loading...',
+  animation: 'dots',      // 'dots' | 'line' | 'braille'
+  showTimer: true,         // Show elapsed time
+  intervalMs: 80          // Animation speed
+})
+```
+
+### Multiple Steps
+
+```typescript
+const s = spinner()
+
+s.start('Step 1: Preparing')
+await step1()
+
+s.update('Step 2: Processing')
+await step2()
+
+s.update('Step 3: Finalizing')
+await step3()
+
+s.succeed('All steps completed')
+```
+
+## Cancellation Handling
+
+All prompts can be cancelled with `Esc` or `Ctrl+C`:
+
+```typescript
+import { isCancel, promptOrExit } from '@bunli/runtime/prompt'
+
+const name = await prompt.text('Project name:')
+
+if (isCancel(name)) {
+  console.log('Cancelled by user')
+  process.exit(0)
+}
+
+// Or use promptOrExit helper
+const name = promptOrExit(
+  await prompt.text('Project name:'),
+  'Setup cancelled'
+)
+```
+
+## Sequential Prompts
+
+Group related prompts:
+
+```typescript
+import { group } from '@bunli/runtime/prompt'
+
+const answers = await group({
+  name: () => prompt.text('Project name:'),
+  type: () => prompt.select('Project type:', { options }),
+  features: () => prompt.multiselect('Features:', { options }),
+  confirm: () => prompt.confirm('Create project?')
+})
+
+console.log(answers.name)
+console.log(answers.type)
+console.log(answers.features)
+```
+
+## Non-Interactive Mode
+
+Provide fallback values for non-interactive environments (CI/CD):
+
+```typescript
+const env = await prompt.select('Environment:', {
+  options,
+  mode: 'interactive',
+  fallbackValue: 'production'
+})
+
+// In CI: Uses fallbackValue
+// In terminal: Shows interactive prompt
+```
+
+## Prompt Session
+
+Create isolated prompt sessions for better control:
+
+```typescript
+import { createPromptSession } from '@bunli/runtime/prompt'
+
+const session = createPromptSession()
+
+await session.initialize()
+
+try {
+  const name = await session.prompt.text('Name:')
+  const email = await session.prompt.text('Email:')
+
+  const s = session.spinner('Submitting...')
+  await submit({ name, email })
+  s.succeed('Submitted!')
+} finally {
+  await session.dispose()
+}
+```
+
+## OpenTUI Integration
+
+Prompts use OpenTUI under the hood for rich rendering:
+
+```typescript
+// From packages/runtime/src/prompt/index.ts
+
+const value = await runOpenTuiTextPrompt({
+  message: 'Enter value:',
+  placeholder: 'default',
+  defaultValue: '',
+  validate: (input) => {
+    if (!input) return 'Required'
+    return undefined
+  },
+  formatHistoryLine: (submitted) => `? Enter value: ${submitted}`
+}, session)
+```
+
+The prompt system maintains a global OpenTUI session for optimal performance and proper terminal state management.
+
+## Real-World Example
+
+```typescript
+import { defineCommand } from '@bunli/core'
+import { prompt, spinner } from '@bunli/runtime/prompt'
+
+export const init = defineCommand({
+  name: 'init',
+  description: 'Initialize a new project',
+  handler: async () => {
+    prompt.intro('Project Setup')
+
+    const name = await prompt.text('Project name:', {
+      placeholder: 'my-app',
+      validate: (v) => v.length > 0 || 'Name required'
+    })
+
+    const framework = await prompt.select('Framework:', {
+      options: [
+        { label: 'React', value: 'react' },
+        { label: 'Vue', value: 'vue' },
+        { label: 'Svelte', value: 'svelte' }
+      ]
+    })
+
+    const features = await prompt.multiselect('Features:', {
+      options: [
+        { label: 'TypeScript', value: 'ts' },
+        { label: 'ESLint', value: 'eslint' },
+        { label: 'Testing', value: 'testing' }
+      ]
+    })
+
+    prompt.note(`
+Project: ${name}
+Framework: ${framework}
+Features: ${features.join(', ')}
+`, 'Configuration')
+
+    const confirmed = await prompt.confirm('Create project?')
+
+    if (!confirmed) {
+      prompt.outro('Cancelled')
+      return
+    }
+
+    const s = spinner('Creating project...')
+    await createProject({ name, framework, features })
+    s.succeed(`Project created: ${name}`)
+
+    prompt.outro('Setup complete!')
+  }
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Rendering" icon="paint-brush" href="/tui/rendering">
+    Learn about the renderer API
+  </Card>
+  <Card title="Components" icon="shapes" href="/tui/components">
+    Explore UI components for complex forms
+  </Card>
+</CardGroup>

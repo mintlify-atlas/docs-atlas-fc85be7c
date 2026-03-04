@@ -1,0 +1,216 @@
+---
+title: Plugin System Overview
+description: Powerful, type-safe plugin architecture for extending Bunli CLIs
+---
+
+## Introduction
+
+Bunli's plugin system provides a powerful way to extend CLI functionality with a type-safe, hook-based architecture. Plugins can:
+
+- Modify configuration during initialization
+- Register new commands dynamically
+- Inject context and behavior before/after command execution
+- Maintain typed shared state across the CLI lifecycle
+- Add middleware to the command pipeline
+
+## Architecture
+
+The plugin system is built around four core lifecycle hooks:
+
+```typescript
+interface BunliPlugin<TStore = {}> {
+  name: string
+  version?: string
+  store?: TStore  // Type-safe shared state
+  
+  // Lifecycle hooks
+  setup?(context: PluginContext): void | Promise<void>
+  configResolved?(config: ResolvedConfig): void | Promise<void>
+  beforeCommand?(context: CommandContext): void | Promise<void>
+  afterCommand?(context: CommandContext & CommandResult): void | Promise<void>
+}
+```
+
+### Lifecycle Order
+
+1. **`setup`** - Called during CLI initialization, can modify config and register commands
+2. **`configResolved`** - Called after configuration is finalized (config is now immutable)
+3. **`beforeCommand`** - Called before each command execution
+4. **`afterCommand`** - Called after each command execution, receives result or error
+
+## Official Plugins
+
+Bunli ships with four official plugins:
+
+<CardGroup cols={2}>
+  <Card title="AI Detection" icon="robot" href="/plugins/ai-detect">
+    Detect AI coding assistants from environment variables
+  </Card>
+  <Card title="Completions" icon="terminal" href="/plugins/completions">
+    Generate shell completion scripts (bash, zsh, fish)
+  </Card>
+  <Card title="Config Merger" icon="file" href="/plugins/config">
+    Load and merge configuration from multiple sources
+  </Card>
+  <Card title="MCP Integration" icon="plug" href="/plugins/mcp">
+    Create CLI commands from Model Context Protocol tool schemas
+  </Card>
+</CardGroup>
+
+## Plugin Capabilities
+
+### Configuration Modification
+
+Plugins can modify CLI configuration during the `setup` hook:
+
+```typescript
+setup(context) {
+  context.updateConfig({
+    description: 'Enhanced with plugin'
+  })
+}
+```
+
+### Command Registration
+
+Dynamically register commands:
+
+```typescript
+setup(context) {
+  context.registerCommand({
+    name: 'custom',
+    description: 'Custom command from plugin',
+    handler: async () => {
+      console.log('Plugin command executed!')
+    }
+  })
+}
+```
+
+### Type-Safe Store
+
+Share typed state across the CLI lifecycle:
+
+```typescript
+interface MyStore {
+  count: number
+  user?: string
+}
+
+const plugin = createPlugin<MyStore>({
+  name: 'my-plugin',
+  store: {
+    count: 0
+  },
+  beforeCommand(context) {
+    context.store.count++ // TypeScript knows the type!
+  }
+})
+```
+
+### Middleware
+
+Add middleware to the command pipeline:
+
+```typescript
+setup(context) {
+  context.use(async (ctx, next) => {
+    console.log('Before command')
+    await next()
+    console.log('After command')
+  })
+}
+```
+
+## Use Cases
+
+### Authentication
+
+```typescript
+const authPlugin = createPlugin({
+  name: 'auth',
+  beforeCommand(context) {
+    if (!process.env.API_KEY) {
+      throw new Error('API_KEY required')
+    }
+  }
+})
+```
+
+### Metrics & Telemetry
+
+```typescript
+const metricsPlugin = createPlugin<{ events: Event[] }>({
+  name: 'metrics',
+  store: { events: [] },
+  beforeCommand(context) {
+    context.store.events.push({
+      command: context.command,
+      timestamp: new Date()
+    })
+  }
+})
+```
+
+### Feature Flags
+
+```typescript
+const featureFlagPlugin = createPlugin({
+  name: 'features',
+  setup(context) {
+    // Register commands based on feature flags
+    if (process.env.FEATURE_BETA) {
+      context.registerCommand(betaCommand)
+    }
+  }
+})
+```
+
+### Environment Detection
+
+```typescript
+const envPlugin = createPlugin({
+  name: 'env-detect',
+  beforeCommand(context) {
+    if (context.env.isCI) {
+      // Adjust behavior for CI environments
+    }
+  }
+})
+```
+
+## Plugin Composition
+
+Compose multiple plugins into one:
+
+```typescript
+import { composePlugins } from '@bunli/core/plugin'
+
+const composedPlugin = composePlugins(
+  authPlugin({ provider: 'github' }),
+  loggingPlugin({ level: 'debug' }),
+  metricsPlugin({ enabled: true })
+)
+```
+
+The composed plugin:
+- Merges all plugin stores
+- Runs all hooks in sequence
+- Combines behavior from multiple plugins
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Plugins" icon="code" href="/plugins/creating-plugins">
+    Learn how to create custom plugins
+  </Card>
+  <Card title="Plugin Hooks" icon="hook" href="/plugins/plugin-hooks">
+    Deep dive into lifecycle hooks
+  </Card>
+  <Card title="Plugin Store" icon="database" href="/plugins/plugin-store">
+    Master type-safe shared state
+  </Card>
+  <Card title="Official Plugins" icon="puzzle-piece" href="/plugins/ai-detect">
+    Explore official plugin implementations
+  </Card>
+</CardGroup>

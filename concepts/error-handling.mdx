@@ -1,0 +1,529 @@
+---
+title: Error Handling
+description: Robust error handling with better-result and TaggedError pattern
+---
+
+Bunli uses the [better-result](https://github.com/colinhacks/better-result) library for type-safe error handling. This provides a consistent pattern for dealing with errors throughout your CLI.
+
+## TaggedError Pattern
+
+Bunli uses the `TaggedError` pattern for defining custom error classes:
+
+```typescript
+import { TaggedError } from '@bunli/core'
+
+class DeploymentError extends TaggedError('DeploymentError')<{
+  message: string
+  environment: string
+  cause?: unknown
+}>() {}
+
+// Throw the error
+throw new DeploymentError({
+  message: 'Deployment failed',
+  environment: 'production',
+  cause: originalError
+})
+```
+
+<Note>
+`TaggedError` creates error classes with a `tag` property for pattern matching and better error discrimination.
+</Note>
+
+## Built-in Error Classes
+
+Bunli provides several built-in error classes:
+
+### Core Errors
+
+<ParamField path="BunliValidationError" type="class">
+  Thrown when option validation fails.
+  
+  ```typescript
+  import { BunliValidationError } from '@bunli/core'
+  
+  throw new BunliValidationError(
+    'Invalid port number',
+    {
+      option: 'port',
+      value: 80,
+      command: 'start',
+      expectedType: 'number (1000-65535)',
+      hint: 'Use a port number between 1000 and 65535'
+    }
+  )
+  ```
+  
+  **Properties:**
+  - `option: string` - Option name
+  - `value: unknown` - Invalid value
+  - `command: string` - Command name
+  - `expectedType: string` - Expected type description
+  - `hint?: string` - Helpful hint for the user
+</ParamField>
+
+<ParamField path="InvalidConfigError" type="class">
+  Thrown when configuration is invalid.
+  
+  ```typescript
+  import { InvalidConfigError } from '@bunli/core'
+  
+  throw new InvalidConfigError({
+    message: 'Invalid configuration',
+    cause: zodError
+  })
+  ```
+</ParamField>
+
+<ParamField path="CommandNotFoundError" type="class">
+  Thrown when a command cannot be found.
+  
+  ```typescript
+  import { CommandNotFoundError } from '@bunli/core'
+  
+  throw new CommandNotFoundError({
+    message: 'Command not found',
+    command: 'deploy'
+  })
+  ```
+</ParamField>
+
+<ParamField path="CommandExecutionError" type="class">
+  Thrown when command execution fails.
+  
+  ```typescript
+  import { CommandExecutionError } from '@bunli/core'
+  
+  throw new CommandExecutionError({
+    message: 'Command failed',
+    command: 'build',
+    cause: error
+  })
+  ```
+</ParamField>
+
+<ParamField path="OptionValidationError" type="class">
+  Thrown when an option fails validation.
+  
+  ```typescript
+  import { OptionValidationError } from '@bunli/core'
+  
+  throw new OptionValidationError({
+    message: 'Invalid option value',
+    command: 'start',
+    option: 'port',
+    cause: error
+  })
+  ```
+</ParamField>
+
+### Config Errors
+
+<ParamField path="ConfigNotFoundError" type="class">
+  Thrown when config file is not found.
+  
+  ```typescript
+  import { ConfigNotFoundError } from '@bunli/core'
+  
+  throw new ConfigNotFoundError({
+    message: 'No config file found',
+    searched: ['bunli.config.ts', 'bunli.config.js']
+  })
+  ```
+</ParamField>
+
+<ParamField path="ConfigLoadError" type="class">
+  Thrown when config file cannot be loaded.
+  
+  ```typescript
+  import { ConfigLoadError } from '@bunli/core'
+  
+  throw new ConfigLoadError({
+    message: 'Failed to load config',
+    path: './bunli.config.ts',
+    cause: error
+  })
+  ```
+</ParamField>
+
+### Plugin Errors
+
+<ParamField path="PluginLoadError" type="class">
+  Thrown when a plugin fails to load.
+  
+  ```typescript
+  import { PluginLoadError } from '@bunli/core'
+  
+  throw new PluginLoadError({
+    message: 'Failed to load plugin',
+    plugin: 'metrics-plugin',
+    cause: error
+  })
+  ```
+</ParamField>
+
+<ParamField path="PluginValidationError" type="class">
+  Thrown when plugin validation fails.
+  
+  ```typescript
+  import { PluginValidationError } from '@bunli/core'
+  
+  throw new PluginValidationError({
+    message: 'Plugin validation failed',
+    plugin: 'auth-plugin'
+  })
+  ```
+</ParamField>
+
+<ParamField path="PluginHookError" type="class">
+  Thrown when a plugin hook fails.
+  
+  ```typescript
+  import { PluginHookError } from '@bunli/core'
+  
+  throw new PluginHookError({
+    message: 'Hook execution failed',
+    plugin: 'logging-plugin',
+    hook: 'beforeCommand',
+    cause: error
+  })
+  ```
+</ParamField>
+
+## Result Type
+
+The `Result` type represents operations that can fail:
+
+```typescript
+import { Result, Ok, Err } from '@bunli/core'
+
+function divide(a: number, b: number): Result<number, Error> {
+  if (b === 0) {
+    return Err(new Error('Division by zero'))
+  }
+  return Ok(a / b)
+}
+
+const result = divide(10, 2)
+if (result.isOk()) {
+  console.log(`Result: ${result.value}`)
+} else {
+  console.error(`Error: ${result.error.message}`)
+}
+```
+
+### Creating Results
+
+<Tabs>
+  <Tab title="Success">
+    ```typescript
+    import { Ok } from '@bunli/core'
+    
+    function getUserName(): Result<string, Error> {
+      return Ok('Alice')
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Failure">
+    ```typescript
+    import { Err } from '@bunli/core'
+    
+    function getUserName(): Result<string, Error> {
+      return Err(new Error('User not found'))
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Async">
+    ```typescript
+    async function fetchUser(): Promise<Result<User, Error>> {
+      try {
+        const user = await api.getUser()
+        return Ok(user)
+      } catch (error) {
+        return Err(new Error('Failed to fetch user'))
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Checking Results
+
+```typescript
+const result = await loadConfigResult()
+
+// Check if successful
+if (result.isOk()) {
+  const config = result.value
+  console.log(`Loaded config: ${config.name}`)
+}
+
+// Check if failed
+if (result.isErr()) {
+  const error = result.error
+  console.error(`Failed: ${error.message}`)
+}
+```
+
+## Error Matching
+
+Match on specific error types:
+
+```typescript
+import { matchError } from '@bunli/core'
+import { ConfigNotFoundError, ConfigLoadError } from '@bunli/core'
+
+const result = await loadConfigResult()
+
+if (result.isErr()) {
+  matchError(result.error, {
+    ConfigNotFoundError: (err) => {
+      console.error('Config file not found')
+      console.error(`Searched: ${err.searched.join(', ')}`)
+    },
+    ConfigLoadError: (err) => {
+      console.error(`Failed to load: ${err.path}`)
+      console.error(err.cause)
+    },
+    _: (err) => {
+      console.error('Unknown error:', err)
+    }
+  })
+}
+```
+
+<Note>
+The `_` key matches any error not explicitly handled.
+</Note>
+
+## Creating Custom Errors
+
+Define custom error classes for your CLI:
+
+```typescript
+import { TaggedError } from '@bunli/core'
+
+// Simple error
+class NetworkError extends TaggedError('NetworkError')<{
+  message: string
+  url: string
+}>() {}
+
+// Error with optional fields
+class DatabaseError extends TaggedError('DatabaseError')<{
+  message: string
+  query: string
+  cause?: unknown
+}>() {}
+
+// Error with nested data
+class ValidationError extends TaggedError('ValidationError')<{
+  message: string
+  errors: Array<{ field: string; message: string }>
+}>() {}
+
+// Usage
+throw new NetworkError({
+  message: 'Failed to fetch data',
+  url: 'https://api.example.com'
+})
+
+throw new ValidationError({
+  message: 'Validation failed',
+  errors: [
+    { field: 'email', message: 'Invalid email format' },
+    { field: 'age', message: 'Must be a positive number' }
+  ]
+})
+```
+
+## Error Recovery
+
+Handle errors gracefully in your commands:
+
+<Tabs>
+  <Tab title="Try-Catch">
+    ```typescript
+    const deployCommand = defineCommand({
+      name: 'deploy',
+      handler: async ({ flags, spinner, colors }) => {
+        const spin = spinner('Deploying...')
+        
+        try {
+          await deploy(flags.env)
+          spin.succeed('Deployment successful')
+        } catch (error) {
+          spin.fail('Deployment failed')
+          
+          if (error instanceof DeploymentError) {
+            console.error(colors.red(`Failed to deploy to ${error.environment}`))
+            if (error.cause) {
+              console.error(colors.dim('Cause:'), error.cause)
+            }
+          } else {
+            console.error(colors.red('Unexpected error:'), error)
+          }
+          
+          process.exit(1)
+        }
+      }
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Result Type">
+    ```typescript
+    async function deployWithResult(
+      env: string
+    ): Promise<Result<void, DeploymentError>> {
+      try {
+        await deploy(env)
+        return Ok(undefined)
+      } catch (error) {
+        return Err(new DeploymentError({
+          message: 'Deployment failed',
+          environment: env,
+          cause: error
+        }))
+      }
+    }
+    
+    const deployCommand = defineCommand({
+      name: 'deploy',
+      handler: async ({ flags, spinner, colors }) => {
+        const result = await deployWithResult(flags.env)
+        
+        if (result.isOk()) {
+          console.log(colors.green('Deployment successful'))
+        } else {
+          const error = result.error
+          console.error(colors.red(`Failed to deploy to ${error.environment}`))
+          process.exit(1)
+        }
+      }
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Graceful Degradation">
+    ```typescript
+    const startCommand = defineCommand({
+      name: 'start',
+      handler: async ({ spinner, colors }) => {
+        const spin = spinner('Starting server...')
+        
+        // Try to load config, fallback to defaults
+        const configResult = await loadConfigResult()
+        const config = configResult.isOk() 
+          ? configResult.value 
+          : getDefaultConfig()
+        
+        if (configResult.isErr()) {
+          console.warn(colors.yellow('Warning: Using default config'))
+        }
+        
+        await startServer(config)
+        spin.succeed('Server started')
+      }
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## Validation Errors
+
+Handle Zod validation errors:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+import { SchemaError } from '@bunli/core'
+
+const command = defineCommand({
+  name: 'create',
+  options: {
+    email: option(
+      z.string().email(),
+      { description: 'User email' }
+    )
+  },
+  handler: async ({ flags }) => {
+    // Email is already validated at this point
+    console.log(`Creating user: ${flags.email}`)
+  }
+})
+
+// Bunli automatically catches and formats validation errors:
+// $ mycli create --email "invalid"
+// Validation Error:
+//   email:
+//     • Invalid email
+```
+
+## Error Helper Utilities
+
+<ParamField path="toErrorMessage" type="function">
+  Convert any error to a string message.
+  
+  ```typescript
+  import { toErrorMessage } from '@bunli/core'
+  
+  try {
+    await riskyOperation()
+  } catch (error) {
+    const message = toErrorMessage(error)
+    console.error(`Failed: ${message}`)
+  }
+  ```
+</ParamField>
+
+## Best Practices
+
+<Steps>
+  <Step title="Use TaggedError for custom errors">
+    TaggedError provides better error discrimination and pattern matching.
+    ```typescript
+    class MyError extends TaggedError('MyError')<{
+      message: string
+      context?: unknown
+    }>() {}
+    ```
+  </Step>
+  
+  <Step title="Provide context in errors">
+    Include relevant information to help debug issues.
+    ```typescript
+    throw new DeploymentError({
+      message: 'Deploy failed',
+      environment: 'prod',
+      cause: originalError
+    })
+    ```
+  </Step>
+  
+  <Step title="Use Result type for expected errors">
+    Return Result types for operations that commonly fail.
+    ```typescript
+    function loadUser(): Result<User, NotFoundError>
+    ```
+  </Step>
+  
+  <Step title="Handle errors gracefully">
+    Provide helpful error messages and recovery options.
+    ```typescript
+    if (result.isErr()) {
+      console.error(colors.red('Error:'), result.error.message)
+      console.log(colors.dim('Hint: Try running with --verbose'))
+    }
+    ```
+  </Step>
+</Steps>
+
+## See Also
+
+- [Handlers](/concepts/handlers) - Implement command logic
+- [Validation](/api/validation) - Validation utilities
+- [better-result](https://github.com/colinhacks/better-result) - Result type library
+- [Zod](https://zod.dev/) - Schema validation

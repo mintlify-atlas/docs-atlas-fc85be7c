@@ -1,0 +1,251 @@
+---
+title: 'defineCommand'
+description: 'Define a CLI command with type-safe options and handlers'
+---
+
+## Function signature
+
+```typescript packages/core/src/types.ts:189-193
+export function defineCommand<TOptions extends Options = Options, TStore = {}, TName extends string = string>(
+  command: RunnableCommand<TOptions, TStore> & { name: TName }
+): RunnableCommand<TOptions, TStore> & { name: TName } {
+  return command
+}
+```
+
+A type-safe helper function for defining CLI commands. It provides full TypeScript inference for command options, flags, and handler arguments.
+
+## Parameters
+
+<ParamField path="command" type="RunnableCommand<TOptions, TStore> & { name: TName }" required>
+  A command object with all required properties.
+
+  <Expandable title="properties">
+    <ResponseField name="name" type="string" required>
+      Command name (used for invocation)
+    </ResponseField>
+    <ResponseField name="description" type="string" required>
+      Human-readable command description
+    </ResponseField>
+    <ResponseField name="options" type="Options">
+      Command-specific options/flags (use `option()` helper)
+    </ResponseField>
+    <ResponseField name="handler" type="Handler<TFlags, TStore>">
+      Command execution function (required if `render` is not provided)
+    </ResponseField>
+    <ResponseField name="render" type="RenderFunction<TFlags, TStore>">
+      TUI render function (required if `handler` is not provided)
+    </ResponseField>
+    <ResponseField name="alias" type="string | string[]">
+      Command aliases
+    </ResponseField>
+    <ResponseField name="tui" type="CommandTuiOptions">
+      TUI-specific configuration
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## Return value
+
+<ResponseField name="RunnableCommand" type="RunnableCommand<TOptions, TStore>">
+  The same command object passed in, with full type inference preserved.
+</ResponseField>
+
+## Command structure
+
+A command must have either a `handler`, a `render` function, or both:
+
+### Handler-based command
+
+Commands with a `handler` function execute in the terminal and have access to utilities like prompts, spinners, and shell commands.
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+export const greetCommand = defineCommand({
+  name: 'greet',
+  description: 'Greet a user',
+  options: {
+    name: option(z.string(), {
+      description: 'Name to greet',
+      short: 'n'
+    }),
+    loud: option(z.boolean().default(false), {
+      description: 'Use uppercase',
+      short: 'l'
+    })
+  },
+  async handler({ flags, colors, prompt }) {
+    const name = flags.name || await prompt.text({
+      message: 'What is your name?'
+    })
+    
+    const greeting = flags.loud 
+      ? `HELLO, ${name.toUpperCase()}!`
+      : `Hello, ${name}!`
+    
+    console.log(colors.green(greeting))
+  }
+})
+```
+
+### Render-based command
+
+Commands with a `render` function use the OpenTUI renderer for interactive terminal UIs.
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { Box, Text } from '@bunli/tui'
+import { z } from 'zod'
+
+export const dashboardCommand = defineCommand({
+  name: 'dashboard',
+  description: 'Show interactive dashboard',
+  options: {
+    refresh: option(z.number().default(1000), {
+      description: 'Refresh interval in ms'
+    })
+  },
+  render({ flags }) {
+    return (
+      <Box flexDirection="column" padding={1}>
+        <Text bold>Dashboard</Text>
+        <Text>Refresh: {flags.refresh}ms</Text>
+      </Box>
+    )
+  }
+})
+```
+
+### Hybrid command
+
+Commands can provide both `handler` and `render`. The CLI automatically selects the render function in interactive terminals and falls back to the handler in non-interactive environments (CI, pipes, etc.).
+
+```typescript
+export const buildCommand = defineCommand({
+  name: 'build',
+  description: 'Build the project',
+  options: {
+    watch: option(z.boolean().default(false), {
+      description: 'Watch for changes'
+    })
+  },
+  async handler({ flags, shell }) {
+    // Non-interactive build
+    await shell`tsc --build`
+  },
+  render({ flags }) {
+    // Interactive build with progress UI
+    return <BuildProgress watch={flags.watch} />
+  }
+})
+```
+
+## Handler arguments
+
+The `handler` and `render` functions receive a comprehensive context object:
+
+<ResponseField name="HandlerArgs" type="object">
+  <Expandable title="properties">
+    <ResponseField name="flags" type="TFlags" required>
+      Parsed and validated command options
+    </ResponseField>
+    <ResponseField name="positional" type="string[]" required>
+      Positional arguments after the command name
+    </ResponseField>
+    <ResponseField name="shell" type="typeof Bun.$" required>
+      Bun shell for executing commands
+    </ResponseField>
+    <ResponseField name="env" type="typeof process.env" required>
+      Environment variables
+    </ResponseField>
+    <ResponseField name="cwd" type="string" required>
+      Current working directory
+    </ResponseField>
+    <ResponseField name="prompt" type="PromptApi" required>
+      Prompt utilities for user input
+    </ResponseField>
+    <ResponseField name="spinner" type="PromptSpinnerFactory" required>
+      Spinner factory for loading states
+    </ResponseField>
+    <ResponseField name="colors" type="Colors" required>
+      Color utilities for terminal output
+    </ResponseField>
+    <ResponseField name="context" type="CommandContext<TStore>">
+      Plugin context with shared store (if plugins are loaded)
+    </ResponseField>
+    <ResponseField name="terminal" type="TerminalInfo" required>
+      Terminal capabilities and dimensions
+    </ResponseField>
+    <ResponseField name="runtime" type="RuntimeInfo" required>
+      Runtime information (start time, args, command name)
+    </ResponseField>
+    <ResponseField name="signal" type="AbortSignal" required>
+      Cooperative cancellation signal for interrupt handling
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Command groups
+
+For non-executable command groups (parent commands with subcommands), use `defineGroup` instead:
+
+```typescript
+import { defineGroup, defineCommand } from '@bunli/core'
+
+export const gitGroup = defineGroup({
+  name: 'git',
+  description: 'Git-related commands',
+  commands: [
+    defineCommand({
+      name: 'status',
+      description: 'Show git status',
+      handler({ shell }) {
+        return shell`git status`
+      }
+    }),
+    defineCommand({
+      name: 'commit',
+      description: 'Create a commit',
+      options: {
+        message: option(z.string(), {
+          description: 'Commit message',
+          short: 'm'
+        })
+      },
+      handler({ flags, shell }) {
+        return shell`git commit -m ${flags.message}`
+      }
+    })
+  ]
+})
+```
+
+## Type inference
+
+The `defineCommand` function preserves full type information:
+
+- Options are inferred from the `options` object
+- Flags in the handler are typed based on option schemas
+- Command names are preserved as literal types for type-safe execution
+
+```typescript
+const cmd = defineCommand({
+  name: 'example',
+  description: 'Example command',
+  options: {
+    count: option(z.number().default(0)),
+    name: option(z.string())
+  },
+  handler({ flags }) {
+    // flags.count is typed as number
+    // flags.name is typed as string
+  }
+})
+```
+
+## Related
+
+- [option](/api/core/option) - Define command options with schemas
+- [createCLI](/api/core/create-cli) - Create a CLI instance to register commands

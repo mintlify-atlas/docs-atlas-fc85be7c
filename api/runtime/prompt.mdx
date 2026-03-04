@@ -1,0 +1,589 @@
+---
+title: "Prompt"
+description: "Interactive prompt APIs for CLI applications"
+---
+
+## Overview
+
+The prompt module provides interactive CLI prompts with support for text input, passwords, confirmations, single/multi-select, and more. All prompts support fallback values for non-interactive environments.
+
+## Imports
+
+```typescript
+import {
+  text,
+  password,
+  confirm,
+  select,
+  multiselect,
+  group,
+  spinner,
+  intro,
+  outro,
+  note,
+  log,
+  cancel,
+  isCancel,
+  CANCEL
+} from '@bunli/runtime/prompt'
+```
+
+## text
+
+Prompt for text input with optional validation and schema support.
+
+```typescript
+async function text<T = string>(
+  message: string,
+  options?: PromptOptions
+): Promise<T>
+```
+
+### Parameters
+
+<ParamField path="message" type="string" required>
+  The prompt message to display
+</ParamField>
+
+<ParamField path="options" type="PromptOptions">
+  <Expandable title="properties">
+    <ParamField path="default" type="string">
+      Default value if user presses Enter
+    </ParamField>
+    
+    <ParamField path="placeholder" type="string">
+      Placeholder text to show
+    </ParamField>
+    
+    <ParamField path="validate" type="(input: string) => boolean | string">
+      Validation function. Return `true` for valid, or error message string
+    </ParamField>
+    
+    <ParamField path="schema" type="StandardSchemaV1">
+      Schema for validation and type coercion (e.g., Zod schema)
+    </ParamField>
+    
+    <ParamField path="mode" type="'inline' | 'interactive'">
+      Prompt mode. `inline` for simple environments, `interactive` for full features
+    </ParamField>
+    
+    <ParamField path="fallbackValue" type="string">
+      Value to use in non-interactive environments (CI, non-TTY)
+    </ParamField>
+    
+    <ParamField path="multiline" type="boolean">
+      Enable multiline input
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Example
+
+```typescript
+import { text } from '@bunli/runtime/prompt'
+import { z } from 'zod'
+
+// Simple text input
+const name = await text('What is your name?')
+
+// With default value
+const repo = await text('Repository name?', {
+  default: 'my-project'
+})
+
+// With validation
+const email = await text('Email address?', {
+  validate: (input) => {
+    if (!input.includes('@')) return 'Invalid email'
+    return true
+  }
+})
+
+// With schema validation
+const port = await text<number>('Port number?', {
+  schema: z.coerce.number().int().min(1).max(65535)
+})
+
+// Non-interactive with fallback
+const apiKey = await text('API key?', {
+  fallbackValue: process.env.API_KEY
+})
+```
+
+## password
+
+Prompt for password input (hidden or toggleable).
+
+```typescript
+async function password<T = string>(
+  message: string,
+  options?: PromptOptions
+): Promise<T>
+```
+
+### Parameters
+
+<ParamField path="message" type="string" required>
+  The prompt message to display
+</ParamField>
+
+<ParamField path="options" type="PromptOptions">
+  Same as `text`, but input is masked
+</ParamField>
+
+### Example
+
+```typescript
+import { password } from '@bunli/runtime/prompt'
+
+const secret = await password('Enter password:')
+
+// With validation
+const strongPassword = await password('Create password:', {
+  validate: (input) => {
+    if (input.length < 8) return 'Password must be at least 8 characters'
+    return true
+  }
+})
+```
+
+<Note>
+  Press **Ctrl+R** to toggle password visibility during input
+</Note>
+
+## confirm
+
+Prompt for yes/no confirmation.
+
+```typescript
+async function confirm(
+  message: string,
+  options?: ConfirmOptions
+): Promise<boolean>
+```
+
+### Parameters
+
+<ParamField path="message" type="string" required>
+  The confirmation message
+</ParamField>
+
+<ParamField path="options" type="ConfirmOptions">
+  <Expandable title="properties">
+    <ParamField path="default" type="boolean">
+      Default value (true = Yes, false = No)
+    </ParamField>
+    
+    <ParamField path="mode" type="'inline' | 'interactive'">
+      Prompt mode
+    </ParamField>
+    
+    <ParamField path="fallbackValue" type="boolean">
+      Fallback for non-interactive
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Example
+
+```typescript
+import { confirm } from '@bunli/runtime/prompt'
+
+const shouldContinue = await confirm('Continue?', {
+  default: true
+})
+
+if (shouldContinue) {
+  // proceed
+}
+```
+
+## select
+
+Prompt to select a single option from a list.
+
+```typescript
+async function select<T = string>(
+  message: string,
+  options: SelectOptions<T>
+): Promise<T>
+```
+
+### Parameters
+
+<ParamField path="message" type="string" required>
+  The prompt message
+</ParamField>
+
+<ParamField path="options" type="SelectOptions<T>" required>
+  <Expandable title="properties">
+    <ParamField path="options" type="SelectOption<T>[]" required>
+      Array of options to choose from
+      
+      <Expandable title="SelectOption properties">
+        <ParamField path="label" type="string" required>
+          Display label
+        </ParamField>
+        
+        <ParamField path="value" type="T" required>
+          Value to return when selected
+        </ParamField>
+        
+        <ParamField path="hint" type="string">
+          Optional hint text
+        </ParamField>
+        
+        <ParamField path="disabled" type="boolean">
+          Whether option is disabled
+        </ParamField>
+      </Expandable>
+    </ParamField>
+    
+    <ParamField path="default" type="T">
+      Initially selected value
+    </ParamField>
+    
+    <ParamField path="fallbackValue" type="T">
+      Fallback for non-interactive
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Example
+
+```typescript
+import { select } from '@bunli/runtime/prompt'
+
+const framework = await select('Choose a framework:', {
+  options: [
+    { label: 'React', value: 'react', hint: 'Popular UI library' },
+    { label: 'Vue', value: 'vue', hint: 'Progressive framework' },
+    { label: 'Svelte', value: 'svelte', hint: 'Compiler-based' },
+    { label: 'Angular', value: 'angular', disabled: true }
+  ],
+  default: 'react'
+})
+
+console.log(`Selected: ${framework}`)
+```
+
+<Tip>
+  Use **Up/Down** arrows or **1-9** number keys for quick selection
+</Tip>
+
+## multiselect
+
+Prompt to select multiple options from a list.
+
+```typescript
+async function multiselect<T = string>(
+  message: string,
+  options: MultiSelectOptions<T>
+): Promise<T[]>
+```
+
+### Parameters
+
+<ParamField path="message" type="string" required>
+  The prompt message
+</ParamField>
+
+<ParamField path="options" type="MultiSelectOptions<T>" required>
+  <Expandable title="properties">
+    <ParamField path="options" type="SelectOption<T>[]" required>
+      Array of options (same structure as `select`)
+    </ParamField>
+    
+    <ParamField path="initialValues" type="T[]">
+      Initially selected values
+    </ParamField>
+    
+    <ParamField path="min" type="number">
+      Minimum number of selections required
+    </ParamField>
+    
+    <ParamField path="max" type="number">
+      Maximum number of selections allowed
+    </ParamField>
+    
+    <ParamField path="fallbackValue" type="T[]">
+      Fallback for non-interactive
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Example
+
+```typescript
+import { multiselect } from '@bunli/runtime/prompt'
+
+const features = await multiselect('Select features:', {
+  options: [
+    { label: 'TypeScript', value: 'typescript' },
+    { label: 'ESLint', value: 'eslint' },
+    { label: 'Prettier', value: 'prettier' },
+    { label: 'Tests', value: 'tests' }
+  ],
+  min: 1,
+  initialValues: ['typescript']
+})
+
+console.log(`Selected: ${features.join(', ')}`)
+```
+
+<Tip>
+  Press **Space** to toggle selection, **Enter** to submit
+</Tip>
+
+## group
+
+Run multiple prompts in sequence and collect results.
+
+```typescript
+async function group<T extends Record<string, () => Promise<unknown>>>(
+  steps: T
+): Promise<{ [K in keyof T]: Awaited<ReturnType<T[K]>> }>
+```
+
+### Example
+
+```typescript
+import { group, text, select, confirm } from '@bunli/runtime/prompt'
+
+const result = await group({
+  name: () => text('Project name?'),
+  framework: () => select('Framework?', {
+    options: [
+      { label: 'React', value: 'react' },
+      { label: 'Vue', value: 'vue' }
+    ]
+  }),
+  install: () => confirm('Install dependencies?')
+})
+
+// result is typed as:
+// {
+//   name: string
+//   framework: string
+//   install: boolean
+// }
+```
+
+## spinner
+
+Create an animated spinner for long-running operations.
+
+```typescript
+function spinner(options?: SpinnerOptions | string): Spinner
+```
+
+### Parameters
+
+<ParamField path="options" type="SpinnerOptions | string">
+  String shorthand for initial text, or options object
+  
+  <Expandable title="SpinnerOptions properties">
+    <ParamField path="text" type="string">
+      Initial spinner text
+    </ParamField>
+    
+    <ParamField path="animation" type="'line' | 'dots' | 'braille'" default="'braille'">
+      Animation style
+    </ParamField>
+    
+    <ParamField path="showTimer" type="boolean">
+      Show elapsed time
+    </ParamField>
+    
+    <ParamField path="intervalMs" type="number" default="80">
+      Animation interval in milliseconds
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Methods
+
+<ResponseField name="start" type="(text?: string) => void">
+  Start the spinner with optional text
+</ResponseField>
+
+<ResponseField name="stop" type="(text?: string) => void">
+  Stop the spinner with optional final text
+</ResponseField>
+
+<ResponseField name="succeed" type="(text?: string) => void">
+  Stop with success indicator
+</ResponseField>
+
+<ResponseField name="fail" type="(text?: string) => void">
+  Stop with error indicator
+</ResponseField>
+
+<ResponseField name="warn" type="(text?: string) => void">
+  Stop with warning indicator
+</ResponseField>
+
+<ResponseField name="info" type="(text?: string) => void">
+  Stop with info indicator
+</ResponseField>
+
+<ResponseField name="update" type="(text: string) => void">
+  Update spinner text while running
+</ResponseField>
+
+### Example
+
+```typescript
+import { spinner } from '@bunli/runtime/prompt'
+
+const s = spinner('Installing dependencies...')
+s.start()
+
+try {
+  await installDeps()
+  s.succeed('Dependencies installed!')
+} catch (error) {
+  s.fail('Installation failed')
+}
+
+// With timer
+const s2 = spinner({
+  text: 'Building project...',
+  showTimer: true,
+  animation: 'braille'
+})
+s2.start()
+await build()
+s2.succeed()
+```
+
+## Output Functions
+
+### intro
+
+Display an intro message.
+
+```typescript
+function intro(message: string): void
+```
+
+### outro
+
+Display an outro message.
+
+```typescript
+function outro(message: string): void
+```
+
+### note
+
+Display a note box with optional title.
+
+```typescript
+function note(message: string, title?: string): void
+```
+
+### log
+
+Structured logging functions.
+
+```typescript
+const log = {
+  info(message: string): void
+  success(message: string): void
+  warn(message: string): void
+  error(message: string): void
+}
+```
+
+### cancel
+
+Display a cancellation message.
+
+```typescript
+function cancel(message?: string): void
+```
+
+### Example
+
+```typescript
+import { intro, outro, note, log } from '@bunli/runtime/prompt'
+
+intro('Project Setup')
+
+log.info('Starting installation...')
+log.success('Installation complete')
+
+note(`
+Project: my-app
+Framework: React
+TypeScript: Yes
+`, 'Configuration')
+
+outro('Setup complete!')
+```
+
+## Cancellation
+
+All prompts can be cancelled with **Esc** or **Ctrl+C**, returning the `CANCEL` symbol.
+
+### isCancel
+
+Check if a value is the cancel symbol.
+
+```typescript
+function isCancel(value: unknown): value is Cancel
+```
+
+### Example
+
+```typescript
+import { text, isCancel } from '@bunli/runtime/prompt'
+
+const name = await text('Your name?')
+
+if (isCancel(name)) {
+  console.log('Cancelled!')
+  process.exit(0)
+}
+
+console.log(`Hello, ${name}!`)
+```
+
+### promptOrExit
+
+Automatically exit if prompt is cancelled.
+
+```typescript
+import { text, promptOrExit } from '@bunli/runtime/prompt'
+
+const name = promptOrExit(
+  await text('Your name?'),
+  'Setup cancelled'
+)
+
+// name is guaranteed to be string, not Cancel
+```
+
+## Best Practices
+
+<Card title="Non-Interactive Environments" icon="server">
+  Always provide `fallbackValue` for CI/CD pipelines and non-TTY environments
+</Card>
+
+<Card title="Validation" icon="check">
+  Use `schema` for complex validation and type coercion (Zod, Valibot, etc.)
+</Card>
+
+<Card title="User Experience" icon="user">
+  - Use clear, concise messages
+  - Provide sensible default values
+  - Add hints for complex options
+  - Group related prompts together
+</Card>
+
+<Card title="Error Handling" icon="shield">
+  - Check for cancellation with `isCancel()`
+  - Provide clear validation error messages
+  - Use spinners for long operations
+</Card>

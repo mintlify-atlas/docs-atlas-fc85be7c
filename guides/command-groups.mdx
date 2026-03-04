@@ -1,0 +1,506 @@
+---
+title: Command Groups
+description: Organize commands into nested hierarchies with subcommands and groups
+---
+
+Command groups let you organize related commands into logical hierarchies. This is perfect for CLIs with many commands or distinct feature areas.
+
+## Basic Command Groups
+
+Create a group using `defineGroup`:
+
+```typescript
+import { defineGroup, defineCommand } from '@bunli/core'
+import statusCommand from './commands/git/status.js'
+import branchCommand from './commands/git/branch.js'
+
+const gitGroup = defineGroup({
+  name: 'git',
+  description: 'Git utilities',
+  commands: [
+    statusCommand,
+    branchCommand
+  ]
+})
+
+export default gitGroup
+```
+
+```bash
+# Usage
+cli git status
+cli git branch --name feature/new
+```
+
+**Source:** `packages/core/src/types.ts:102-107`
+
+## Nested Groups
+
+Groups can contain other groups:
+
+```typescript
+import { defineGroup } from '@bunli/core'
+import gitGroup from './git-group.js'
+import dockerGroup from './docker-group.js'
+import deployCommand from './deploy.js'
+
+const devopsGroup = defineGroup({
+  name: 'devops',
+  description: 'DevOps tools',
+  commands: [
+    gitGroup,      // Nested group
+    dockerGroup,   // Nested group
+    deployCommand  // Direct command
+  ]
+})
+```
+
+```bash
+# Three levels deep
+cli devops git status
+cli devops docker ps
+cli devops deploy
+```
+
+## Inline Subcommands
+
+Define subcommands directly in a command:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+const gitCommand = defineCommand({
+  name: 'git',
+  description: 'Git utilities',
+  commands: [
+    defineCommand({
+      name: 'status',
+      description: 'Show git status',
+      handler: async ({ shell, colors }) => {
+        const { stdout } = await shell`git status --porcelain`
+        console.log(colors.green(stdout.toString()))
+      }
+    }),
+    defineCommand({
+      name: 'branch',
+      description: 'Manage branches',
+      options: {
+        name: option(z.string(), { description: 'Branch name' })
+      },
+      handler: async ({ flags, shell }) => {
+        await shell`git checkout -b ${flags.name}`
+      }
+    })
+  ]
+})
+
+export default gitCommand
+```
+
+**Source:** `packages/core/src/types.ts:82-84`
+
+## Group Structure
+
+Groups are commands without handlers:
+
+```typescript
+interface Group<TStore = {}, TName extends string = string> {
+  name: TName
+  description: string
+  commands: Command<any, TStore, any>[]  // Required
+  alias?: string | string[]               // Optional
+  handler?: undefined                     // No handler
+  render?: undefined                      // No render
+  options?: undefined                     // No options
+}
+```
+
+**Source:** `packages/core/src/types.ts:102-107`
+
+## Practical Example: Git CLI
+
+Let's build a git tool with multiple commands:
+
+<Steps>
+  <Step title="Create individual commands">
+    ```typescript
+    // commands/git/status.ts
+    import { defineCommand, option } from '@bunli/core'
+    import { z } from 'zod'
+    
+    export default defineCommand({
+      name: 'status',
+      alias: 'st',
+      description: 'Enhanced git status',
+      options: {
+        detailed: option(
+          z.coerce.boolean().default(false),
+          { short: 'd', description: 'Show detailed information' }
+        )
+      },
+      handler: async ({ flags, shell, colors }) => {
+        const { stdout: status } = await shell`git status --porcelain`
+        const { stdout: branch } = await shell`git branch --show-current`
+        
+        console.log(colors.bold('Git Status'))
+        console.log(`Branch: ${colors.cyan(branch.toString().trim())}`)
+        
+        if (status.toString().trim()) {
+          const lines = status.toString().trim().split('\n')
+          console.log(`Changes: ${colors.yellow(lines.length.toString())} files`)
+          
+          if (flags.detailed) {
+            lines.forEach(line => console.log(`  ${line}`))
+          }
+        } else {
+          console.log(colors.green('Working directory clean'))
+        }
+      }
+    })
+    ```
+  </Step>
+  
+  <Step title="Create branch command">
+    ```typescript
+    // commands/git/branch.ts
+    import { defineCommand, option } from '@bunli/core'
+    import { z } from 'zod'
+    
+    export default defineCommand({
+      name: 'branch',
+      alias: 'br',
+      description: 'Create or switch branches',
+      options: {
+        name: option(
+          z.string().min(1),
+          { short: 'n', description: 'Branch name' }
+        ),
+        switch: option(
+          z.coerce.boolean().default(false),
+          { short: 's', description: 'Switch to branch after creating' }
+        )
+      },
+      handler: async ({ flags, shell, spinner }) => {
+        const spin = spinner(`Creating branch '${flags.name}'...`)
+        
+        await shell`git checkout -b ${flags.name}`
+        
+        if (!flags.switch) {
+          const { stdout } = await shell`git branch --show-current`
+          await shell`git checkout ${stdout.toString().trim()}`
+        }
+        
+        spin.succeed(`Created branch '${flags.name}'`)
+      }
+    })
+    ```
+  </Step>
+  
+  <Step title="Create sync command">
+    ```typescript
+    // commands/git/sync.ts
+    import { defineCommand } from '@bunli/core'
+    
+    export default defineCommand({
+      name: 'sync',
+      description: 'Sync with remote',
+      handler: async ({ shell, spinner }) => {
+        const spin = spinner('Syncing with remote...')
+        
+        spin.update('Fetching...')
+        await shell`git fetch origin`
+        
+        spin.update('Pulling...')
+        await shell`git pull origin main`
+        
+        spin.succeed('Synced successfully')
+      }
+    })
+    ```
+  </Step>
+  
+  <Step title="Organize into a group">
+    ```typescript
+    // cli.ts
+    import { createCLI, defineGroup } from '@bunli/core'
+    import statusCommand from './commands/git/status.js'
+    import branchCommand from './commands/git/branch.js'
+    import syncCommand from './commands/git/sync.js'
+    
+    const cli = await createCLI({
+      name: 'mygit',
+      version: '1.0.0',
+      description: 'Git utilities'
+    })
+    
+    // Register git commands as a group
+    const gitGroup = defineGroup({
+      name: 'git',
+      description: 'Git operations',
+      commands: [statusCommand, branchCommand, syncCommand]
+    })
+    
+    cli.command(gitGroup)
+    await cli.run()
+    ```
+  </Step>
+</Steps>
+
+**Source:** `examples/git-tool/`
+
+## Multiple Top-Level Groups
+
+Organize your CLI into feature areas:
+
+```typescript
+import { createCLI, defineGroup } from '@bunli/core'
+
+// Git group
+const gitGroup = defineGroup({
+  name: 'git',
+  description: 'Git utilities',
+  commands: [statusCommand, branchCommand, syncCommand]
+})
+
+// Docker group
+const dockerGroup = defineGroup({
+  name: 'docker',
+  description: 'Docker utilities',
+  commands: [psCommand, logsCommand, execCommand]
+})
+
+// Database group
+const dbGroup = defineGroup({
+  name: 'db',
+  description: 'Database tools',
+  commands: [migrateCommand, seedCommand, backupCommand]
+})
+
+const cli = await createCLI({
+  name: 'devtools',
+  version: '1.0.0'
+})
+
+cli.command(gitGroup)
+cli.command(dockerGroup)
+cli.command(dbGroup)
+
+await cli.run()
+```
+
+```bash
+# Usage
+devtools git status
+devtools docker ps
+devtools db migrate
+```
+
+## Group Aliases
+
+Add shortcuts for groups:
+
+```typescript
+const gitGroup = defineGroup({
+  name: 'git',
+  alias: 'g',  // Short alias
+  description: 'Git utilities',
+  commands: [statusCommand, branchCommand]
+})
+```
+
+```bash
+# Both work
+cli git status
+cli g status
+```
+
+**Source:** `packages/core/src/types.ts:83`
+
+## Command Path Resolution
+
+Bunli finds the deepest matching command:
+
+```typescript
+const cli = await createCLI()
+
+cli.command(defineGroup({
+  name: 'git',
+  commands: [
+    defineCommand({
+      name: 'status',
+      commands: [
+        defineCommand({
+          name: 'short',
+          handler: async () => console.log('Short status')
+        })
+      ]
+    })
+  ]
+}))
+```
+
+```bash
+# Finds the deepest match
+cli git status short  → Runs git/status/short
+cli git status        → Shows help for git/status
+cli git               → Shows help for git
+```
+
+**Source:** `packages/core/src/cli.ts:262-272`
+
+## Help Output for Groups
+
+Groups automatically show available subcommands:
+
+```bash
+$ cli git --help
+Usage: cli git [options]
+
+Git utilities
+
+Subcommands:
+  status    Show git status
+  branch    Create or switch branches
+  sync      Sync with remote
+```
+
+**Source:** `packages/core/src/cli.ts:399-407`
+
+## Accessing Parent Context
+
+Plugin context is available to all commands in a group:
+
+```typescript
+import { createCLI, defineGroup, defineCommand } from '@bunli/core'
+import { createPlugin } from '@bunli/core'
+
+// Plugin that tracks metrics
+const metricsPlugin = createPlugin<{ metrics: Map<string, number> }>({
+  name: 'metrics',
+  setup: async () => {
+    return {
+      store: {
+        metrics: new Map()
+      }
+    }
+  }
+})
+
+const statusCommand = defineCommand({
+  name: 'status',
+  handler: async ({ context }) => {
+    // Access plugin store
+    if (context?.store.metrics) {
+      context.store.metrics.set('status_runs', 
+        (context.store.metrics.get('status_runs') || 0) + 1
+      )
+    }
+  }
+})
+
+const gitGroup = defineGroup({
+  name: 'git',
+  commands: [statusCommand]
+})
+
+const cli = await createCLI({
+  name: 'cli',
+  version: '1.0.0',
+  plugins: [metricsPlugin]
+})
+
+cli.command(gitGroup)
+```
+
+**Source:** `examples/dev-server/commands/start.ts:38-66`
+
+## File Organization
+
+Recommended structure for grouped commands:
+
+```
+project/
+├── cli.ts
+├── commands/
+│   ├── git/
+│   │   ├── status.ts
+│   │   ├── branch.ts
+│   │   └── sync.ts
+│   ├── docker/
+│   │   ├── ps.ts
+│   │   ├── logs.ts
+│   │   └── exec.ts
+│   └── db/
+│       ├── migrate.ts
+│       ├── seed.ts
+│       └── backup.ts
+└── bunli.config.ts
+```
+
+## Dynamic Command Registration
+
+Load commands dynamically:
+
+```typescript
+import { createCLI, defineGroup } from '@bunli/core'
+import { readdirSync } from 'node:fs'
+import { join } from 'node:path'
+
+const cli = await createCLI()
+
+// Load all commands from a directory
+const commandsDir = join(import.meta.dir, 'commands')
+const files = readdirSync(commandsDir)
+
+for (const file of files) {
+  if (file.endsWith('.ts') || file.endsWith('.js')) {
+    const command = await import(join(commandsDir, file))
+    cli.command(command.default)
+  }
+}
+
+await cli.run()
+```
+
+## Testing Command Groups
+
+```typescript
+import { describe, test, expect } from 'bun:test'
+import { createCLI } from '@bunli/core'
+import gitGroup from './git-group.js'
+
+describe('Git commands', () => {
+  test('status command works', async () => {
+    const cli = await createCLI({
+      name: 'test',
+      version: '1.0.0'
+    })
+    
+    cli.command(gitGroup)
+    
+    // Execute command programmatically
+    await cli.execute('git/status', { detailed: true })
+  })
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Defining Commands" icon="terminal" href="/guides/defining-commands">
+    Learn the fundamentals of command creation
+  </Card>
+  
+  <Card title="Working with Options" icon="sliders" href="/guides/working-with-options">
+    Master command options and validation
+  </Card>
+  
+  <Card title="Type Generation" icon="code" href="/guides/type-generation">
+    Automatic TypeScript types for nested commands
+  </Card>
+  
+  <Card title="Building Binaries" icon="box" href="/guides/building-binaries">
+    Compile grouped commands to executables
+  </Card>
+</CardGroup>

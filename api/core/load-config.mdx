@@ -1,0 +1,280 @@
+---
+title: 'loadConfig'
+description: 'Load and parse CLI configuration from files'
+---
+
+## Function signature
+
+```typescript packages/core/src/config-loader.ts:56-63
+export async function loadConfig(cwd = process.cwd()): Promise<BunliConfig> {
+  const result = await loadConfigResult(cwd)
+  if (result.isOk()) {
+    return result.value
+  }
+
+  throw result.error
+}
+```
+
+Load configuration from a Bunli config file. The function searches for configuration files in the specified directory and returns a validated config object.
+
+## Parameters
+
+<ParamField path="cwd" type="string" default="process.cwd()">
+  Directory to search for configuration files. Defaults to the current working directory.
+</ParamField>
+
+## Return value
+
+<ResponseField name="Promise<BunliConfig>" type="Promise<BunliConfig>">
+  Promise that resolves to a validated configuration object with all defaults applied.
+</ResponseField>
+
+## Configuration file search
+
+The function searches for configuration files in this order:
+
+1. `bunli.config.ts` (TypeScript)
+2. `bunli.config.js` (JavaScript CommonJS)
+3. `bunli.config.mjs` (JavaScript ESM)
+
+The first file found is loaded and validated.
+
+## Error handling
+
+The function throws errors in two cases:
+
+### ConfigNotFoundError
+
+Thrown when no configuration file is found in the specified directory.
+
+<ResponseField name="ConfigNotFoundError" type="TaggedError">
+  <Expandable title="properties">
+    <ResponseField name="message" type="string">
+      Error message indicating no config file was found
+    </ResponseField>
+    <ResponseField name="searched" type="string[]">
+      List of file names that were searched for
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```typescript
+try {
+  const config = await loadConfig('./my-project')
+} catch (error) {
+  if (error instanceof ConfigNotFoundError) {
+    console.error('No config file found')
+    console.error('Searched for:', error.searched)
+  }
+}
+```
+
+### ConfigLoadError
+
+Thrown when a configuration file is found but fails to load or validate.
+
+<ResponseField name="ConfigLoadError" type="TaggedError">
+  <Expandable title="properties">
+    <ResponseField name="message" type="string">
+      Error message indicating the load failure
+    </ResponseField>
+    <ResponseField name="path" type="string">
+      Path to the config file that failed to load
+    </ResponseField>
+    <ResponseField name="cause" type="unknown">
+      Original error (syntax error, validation error, etc.)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```typescript
+try {
+  const config = await loadConfig()
+} catch (error) {
+  if (error instanceof ConfigLoadError) {
+    console.error(`Failed to load config from ${error.path}`)
+    console.error('Cause:', error.cause)
+  }
+}
+```
+
+## Result-based API
+
+For more control over error handling, use `loadConfigResult()` which returns a `Result` type instead of throwing:
+
+```typescript packages/core/src/config-loader.ts:27-54
+export async function loadConfigResult(
+  cwd = process.cwd()
+): Promise<Result<BunliConfig, ConfigNotFoundError | ConfigLoadError>>
+```
+
+### Examples with Result API
+
+```typescript
+import { loadConfigResult } from '@bunli/core'
+
+const result = await loadConfigResult()
+
+if (result.isOk()) {
+  const config = result.value
+  console.log(`Loaded config for ${config.name}`)
+} else {
+  const error = result.error
+  
+  if (error instanceof ConfigNotFoundError) {
+    console.log('No config file found, using defaults')
+  } else if (error instanceof ConfigLoadError) {
+    console.error(`Failed to load config: ${error.message}`)
+    process.exit(1)
+  }
+}
+```
+
+## Examples
+
+### Basic usage
+
+```typescript
+import { loadConfig } from '@bunli/core'
+
+// Load from current directory
+const config = await loadConfig()
+
+console.log(config.name)     // CLI name
+console.log(config.version)  // CLI version
+```
+
+### Load from specific directory
+
+```typescript
+import { loadConfig } from '@bunli/core'
+import path from 'node:path'
+
+const projectDir = path.join(process.cwd(), 'my-project')
+const config = await loadConfig(projectDir)
+```
+
+### With error handling
+
+```typescript
+import { loadConfig, ConfigNotFoundError, ConfigLoadError } from '@bunli/core'
+
+try {
+  const config = await loadConfig()
+  console.log(`Loaded ${config.name} v${config.version}`)
+} catch (error) {
+  if (error instanceof ConfigNotFoundError) {
+    console.error('No bunli config file found')
+    console.error('Please create one of:', error.searched.join(', '))
+    process.exit(1)
+  }
+  
+  if (error instanceof ConfigLoadError) {
+    console.error(`Failed to load config from ${error.path}`)
+    console.error(error.message)
+    process.exit(1)
+  }
+  
+  throw error
+}
+```
+
+### Integration with createCLI
+
+Note that `createCLI()` automatically calls `loadConfig()` internally, so you typically don't need to load config manually:
+
+```typescript
+import { createCLI } from '@bunli/core'
+
+// Config is automatically loaded
+const cli = await createCLI()
+
+// But you can also load it explicitly for other purposes
+import { loadConfig } from '@bunli/core'
+const config = await loadConfig()
+
+// Then pass it to createCLI
+const cli = await createCLI(config)
+```
+
+### Conditional loading
+
+```typescript
+import { loadConfigResult, defineConfig } from '@bunli/core'
+
+const result = await loadConfigResult()
+
+const config = result.isOk() 
+  ? result.value
+  : defineConfig({
+      name: 'my-cli',
+      version: '1.0.0',
+      description: 'Fallback config'
+    })
+
+const cli = await createCLI(config)
+```
+
+### Merging configurations
+
+```typescript
+import { loadConfig, defineConfig } from '@bunli/core'
+
+// Load base config from file
+const baseConfig = await loadConfig()
+
+// Merge with overrides
+const config = defineConfig({
+  ...baseConfig,
+  // Override specific fields
+  plugins: [
+    ...baseConfig.plugins,
+    myCustomPlugin()
+  ]
+})
+
+const cli = await createCLI(config)
+```
+
+## Debugging
+
+The config loader uses the `core:config` logger namespace. Enable debug logs to see what's happening:
+
+```bash
+DEBUG=core:config bun run cli.ts
+```
+
+This will output:
+- Which config files are being searched
+- Which file was found and loaded
+- Validation errors if the config is invalid
+
+## Configuration validation
+
+All loaded configurations are validated using the `bunliConfigSchema` Zod schema. This ensures:
+
+- Required fields are present
+- Field types are correct
+- Default values are applied
+- Invalid values are rejected
+
+```typescript
+// Valid config
+{
+  name: 'my-cli',
+  version: '1.0.0'
+}
+
+// Invalid config (will throw ConfigLoadError)
+{
+  name: '',  // Empty string not allowed
+  version: '1.0.0'
+}
+```
+
+## Related
+
+- [defineConfig](/api/core/define-config) - Define configuration with type safety
+- [createCLI](/api/core/create-cli) - Create a CLI (automatically loads config)
+- [better-result](https://github.com/supeffective/better-result) - Result type for error handling

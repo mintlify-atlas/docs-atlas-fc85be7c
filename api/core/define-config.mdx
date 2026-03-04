@@ -1,0 +1,427 @@
+---
+title: 'defineConfig'
+description: 'Define CLI configuration with type safety and validation'
+---
+
+## Function signature
+
+```typescript packages/core/src/config.ts:173-175
+export function defineConfig(config: BunliConfigInput): BunliConfig {
+  return bunliConfigSchema.parse(config)
+}
+```
+
+A helper function for defining Bunli configuration with full type safety. It validates the configuration using Zod and applies all default values.
+
+## Parameters
+
+<ParamField path="config" type="BunliConfigInput" required>
+  Configuration object for the CLI application.
+
+  <Expandable title="properties">
+    <ResponseField name="name" type="string">
+      CLI application name (required for CLI creation, optional in config files)
+    </ResponseField>
+    <ResponseField name="version" type="string">
+      CLI application version (required for CLI creation, optional in config files)
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      CLI application description
+    </ResponseField>
+    <ResponseField name="commands" type="object">
+      Commands configuration
+      <Expandable title="properties">
+        <ResponseField name="entry" type="string">
+          Entry point file for command registration
+        </ResponseField>
+        <ResponseField name="directory" type="string">
+          Directory containing command files
+        </ResponseField>
+        <ResponseField name="generateReport" type="boolean">
+          Generate command analysis report
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="build" type="object">
+      Build configuration (TypeScript compilation required)
+      <Expandable title="properties">
+        <ResponseField name="entry" type="string | string[]">
+          Entry point(s) for the build
+        </ResponseField>
+        <ResponseField name="outdir" type="string">
+          Output directory
+        </ResponseField>
+        <ResponseField name="targets" type="string[]" default="[]">
+          Build targets (e.g., `['node-linux-x64', 'node-darwin-arm64']`)
+        </ResponseField>
+        <ResponseField name="compress" type="boolean" default="false">
+          Enable compression
+        </ResponseField>
+        <ResponseField name="minify" type="boolean" default="false">
+          Enable minification
+        </ResponseField>
+        <ResponseField name="external" type="string[]">
+          External dependencies to exclude from bundle
+        </ResponseField>
+        <ResponseField name="sourcemap" type="boolean" default="true">
+          Generate source maps for debugging
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="dev" type="object">
+      Development configuration
+      <Expandable title="properties">
+        <ResponseField name="watch" type="boolean" default="true">
+          Enable file watching
+        </ResponseField>
+        <ResponseField name="inspect" type="boolean" default="false">
+          Enable debugger
+        </ResponseField>
+        <ResponseField name="port" type="number">
+          Development server port
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="test" type="object">
+      Test configuration
+      <Expandable title="properties">
+        <ResponseField name="pattern" type="string | string[]" default="['**/*.test.ts', '**/*.spec.ts']">
+          Test file patterns
+        </ResponseField>
+        <ResponseField name="coverage" type="boolean" default="false">
+          Enable coverage reporting
+        </ResponseField>
+        <ResponseField name="watch" type="boolean" default="false">
+          Enable watch mode
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="workspace" type="object">
+      Workspace configuration for monorepos
+      <Expandable title="properties">
+        <ResponseField name="packages" type="string[]">
+          Package glob patterns
+        </ResponseField>
+        <ResponseField name="shared" type="unknown">
+          Shared workspace configuration
+        </ResponseField>
+        <ResponseField name="versionStrategy" type="'fixed' | 'independent'" default="'fixed'">
+          Versioning strategy
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="release" type="object">
+      Release configuration
+      <Expandable title="properties">
+        <ResponseField name="npm" type="boolean" default="true">
+          Publish to npm
+        </ResponseField>
+        <ResponseField name="github" type="boolean" default="false">
+          Create GitHub releases
+        </ResponseField>
+        <ResponseField name="tagFormat" type="string" default="'v{{version}}'">
+          Git tag format
+        </ResponseField>
+        <ResponseField name="conventionalCommits" type="boolean" default="true">
+          Use conventional commits for changelog
+        </ResponseField>
+        <ResponseField name="binary" type="object">
+          Binary distribution configuration
+          <Expandable title="properties">
+            <ResponseField name="packageNameFormat" type="string" default="'{{name}}-{{platform}}'">
+              Format for platform-specific package names
+            </ResponseField>
+            <ResponseField name="shimPath" type="string" default="'bin/run.mjs'">
+              Path to the shim entry point
+            </ResponseField>
+          </Expandable>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="plugins" type="BunliPlugin[]" default="[]">
+      Plugins to load
+    </ResponseField>
+    <ResponseField name="help" type="object">
+      Help output configuration
+      <Expandable title="properties">
+        <ResponseField name="renderer" type="function">
+          Custom help renderer function
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="tui" type="object">
+      TUI configuration
+      <Expandable title="properties">
+        <ResponseField name="renderer" type="object">
+          TUI renderer options
+          <Expandable title="properties">
+            <ResponseField name="bufferMode" type="'alternate' | 'standard'">
+              Terminal buffer mode: `'alternate'` for full-screen, `'standard'` for scrollback
+            </ResponseField>
+          </Expandable>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## Return value
+
+<ResponseField name="BunliConfig" type="BunliConfig">
+  Validated configuration object with all defaults applied.
+</ResponseField>
+
+## Examples
+
+### Basic configuration
+
+```typescript bunli.config.ts
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0',
+  description: 'My awesome CLI tool'
+})
+```
+
+### With commands configuration
+
+```typescript bunli.config.ts
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0',
+  description: 'My awesome CLI tool',
+  commands: {
+    entry: './src/cli.ts',
+    directory: './src/commands',
+    generateReport: true
+  }
+})
+```
+
+### With build configuration
+
+```typescript bunli.config.ts
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0',
+  build: {
+    entry: './src/cli.ts',
+    outdir: './dist',
+    targets: ['node-linux-x64', 'node-darwin-arm64', 'node-windows-x64'],
+    minify: true,
+    compress: true,
+    external: ['@bunli/core']
+  }
+})
+```
+
+### With plugins
+
+```typescript bunli.config.ts
+import { defineConfig } from '@bunli/core'
+import { completionsPlugin } from '@bunli/plugin-completions'
+import { configPlugin } from '@bunli/plugin-config'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0',
+  plugins: [
+    completionsPlugin(),
+    configPlugin({
+      name: 'my-cli',
+      searchPlaces: ['.my-cli.json', '.my-clirc']
+    })
+  ]
+})
+```
+
+### Development and testing
+
+```typescript bunli.config.ts
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0',
+  dev: {
+    watch: true,
+    inspect: false,
+    port: 3000
+  },
+  test: {
+    pattern: ['**/*.test.ts'],
+    coverage: true,
+    watch: false
+  }
+})
+```
+
+### Workspace configuration
+
+```typescript bunli.config.ts
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-monorepo',
+  version: '1.0.0',
+  workspace: {
+    packages: ['packages/*'],
+    versionStrategy: 'independent'
+  }
+})
+```
+
+### Release configuration
+
+```typescript bunli.config.ts
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0',
+  release: {
+    npm: true,
+    github: true,
+    tagFormat: 'v{{version}}',
+    conventionalCommits: true,
+    binary: {
+      packageNameFormat: '{{name}}-{{platform}}',
+      shimPath: 'bin/run.mjs'
+    }
+  },
+  build: {
+    targets: ['node-linux-x64', 'node-darwin-arm64']
+  }
+})
+```
+
+### Custom TUI configuration
+
+```typescript bunli.config.ts
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0',
+  tui: {
+    renderer: {
+      bufferMode: 'alternate' // Full-screen TUI
+    }
+  }
+})
+```
+
+### Custom help renderer
+
+```typescript bunli.config.ts
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0',
+  help: {
+    renderer({ cliName, version, command, commands, terminal }) {
+      console.log(`${cliName} v${version}`)
+      
+      if (command) {
+        console.log(`\nCommand: ${command.name}`)
+        console.log(command.description)
+      } else {
+        console.log('\nCommands:')
+        for (const cmd of commands) {
+          console.log(`  ${cmd.name.padEnd(20)} ${cmd.description}`)
+        }
+      }
+    }
+  }
+})
+```
+
+## Configuration file formats
+
+Bunli supports multiple configuration file formats:
+
+### TypeScript (recommended)
+
+```typescript bunli.config.ts
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0'
+})
+```
+
+### JavaScript (ESM)
+
+```javascript bunli.config.mjs
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0'
+})
+```
+
+### JavaScript (CommonJS)
+
+```javascript bunli.config.js
+const { defineConfig } = require('@bunli/core')
+
+module.exports = defineConfig({
+  name: 'my-cli',
+  version: '1.0.0'
+})
+```
+
+## Validation
+
+The `defineConfig` function validates the configuration using Zod schemas. If validation fails, it throws an error with details:
+
+```typescript
+// Invalid configuration
+defineConfig({
+  name: '',  // Empty string not allowed
+  version: '1.0.0'
+})
+// Error: Invalid config: { name: ['String must contain at least 1 character(s)'] }
+```
+
+## Default values
+
+The function automatically applies defaults for optional fields:
+
+```typescript
+const config = defineConfig({
+  name: 'my-cli',
+  version: '1.0.0'
+})
+
+// Defaults applied:
+// config.build.targets = []
+// config.build.compress = false
+// config.build.minify = false
+// config.build.sourcemap = true
+// config.dev.watch = true
+// config.dev.inspect = false
+// config.test.pattern = ['**/*.test.ts', '**/*.spec.ts']
+// config.test.coverage = false
+// config.test.watch = false
+// config.workspace.versionStrategy = 'fixed'
+// config.release.npm = true
+// config.release.github = false
+// config.release.tagFormat = 'v{{version}}'
+// config.release.conventionalCommits = true
+// config.plugins = []
+```
+
+## Related
+
+- [loadConfig](/api/core/load-config) - Load configuration from files
+- [createCLI](/api/core/create-cli) - Create a CLI with configuration

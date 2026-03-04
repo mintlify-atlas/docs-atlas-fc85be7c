@@ -1,0 +1,442 @@
+---
+title: Testing
+description: Run tests for your Bunli CLI using the built-in test runner and @bunli/test utilities
+---
+
+The `bunli test` command runs tests for your CLI using Bun's built-in test runner. It supports watch mode, coverage reporting, and workspace testing across multiple packages.
+
+## Usage
+
+```bash
+bunli test [options] [patterns...]
+```
+
+### Basic Examples
+
+```bash
+# Run all tests
+bunli test
+
+# Run tests matching pattern
+bunli test "**/*.test.ts"
+
+# Watch mode
+bunli test --watch
+
+# Generate coverage report
+bunli test --coverage
+
+# Run tests in all workspace packages
+bunli test --all
+```
+
+## Options
+
+| Option | Alias | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--pattern` | `-p` | `string \| string[]` | - | Test file patterns |
+| `--watch` | `-w` | `boolean` | `false` | Watch for changes |
+| `--coverage` | `-c` | `boolean` | `false` | Generate coverage report |
+| `--bail` | `-b` | `boolean` | `false` | Stop on first failure |
+| `--timeout` | - | `number` | - | Test timeout in milliseconds |
+| `--all` | - | `boolean` | `false` | Run tests in all packages (workspace mode) |
+
+## Test Patterns
+
+By default, Bunli runs tests matching `**/*.test.ts`. You can customize patterns:
+
+```bash
+# Test specific files
+bunli test "src/commands/*.test.ts"
+
+# Multiple patterns
+bunli test "**/*.test.ts" "**/*.spec.ts"
+```
+
+Configure default patterns in `bunli.config.ts`:
+
+```typescript
+export default defineConfig({
+  test: {
+    pattern: '**/*.test.ts',
+    coverage: false,
+    watch: false
+  }
+})
+```
+
+## Workspace Mode
+
+In monorepo setups, test all packages with `--all`:
+
+```bash
+bunli test --all
+```
+
+This runs tests in each package defined in your workspace configuration:
+
+```typescript
+// From packages/cli/src/commands/test.ts:42-71
+if (flags.all && config.workspace?.packages) {
+  // Workspace mode - run tests in all packages
+  const packages = config.workspace.packages
+  let allPassed = true
+  
+  for (const packagePattern of packages) {
+    const packageDirs = await findPackageDirectories(packagePattern)
+    
+    for (const packageDir of packageDirs) {
+      const spin = spinner(`Testing ${packageDir}...`)
+      spin.start()
+      
+      try {
+        const result = await runTests(packageDir, flags, config)
+        if (result.success) {
+          spin.succeed(`${packageDir} tests passed`)
+        } else {
+          spin.fail(`${packageDir} tests failed`)
+          allPassed = false
+          if (flags.bail) break
+        }
+      } catch (error) {
+        spin.fail(`${packageDir} tests failed`)
+        console.error(colors.red(error instanceof Error ? error.message : String(error)))
+        allPassed = false
+        if (flags.bail) break
+      }
+    }
+    if (!allPassed && flags.bail) break
+  }
+}
+```
+
+## Test Runner Implementation
+
+The test command delegates to Bun's test runner:
+
+```typescript
+// From packages/cli/src/commands/test.ts:110-178
+async function runTests(cwd: string, flags: any, config: any): Promise<TestResult> {
+  return new Promise((resolve, reject) => {
+    // Build test command
+    const args = ['test']
+    
+    // Test patterns
+    const patterns = flags.pattern || config.test?.pattern || '**/*.test.ts'
+    const patternArray = Array.isArray(patterns) ? patterns : [patterns]
+    args.push(...patternArray)
+    
+    // Watch mode
+    if (flags.watch ?? config.test?.watch) {
+      args.push('--watch')
+    }
+    
+    // Coverage
+    if (flags.coverage ?? config.test?.coverage) {
+      args.push('--coverage')
+    }
+    
+    // Bail on first failure
+    if (flags.bail) {
+      args.push('--bail')
+    }
+    
+    // Timeout
+    if (flags.timeout) {
+      args.push(`--timeout`, flags.timeout.toString())
+    }
+    
+    const proc = spawn('bun', args, {
+      cwd,
+      stdio: ['inherit', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        NODE_ENV: 'test'
+      }
+    })
+    
+    let stdout = ''
+    let stderr = ''
+    
+    proc.stdout?.on('data', (data) => {
+      stdout += data.toString()
+      process.stdout.write(data)
+    })
+    
+    proc.stderr?.on('data', (data) => {
+      stderr += data.toString()
+      process.stderr.write(data)
+    })
+    
+    proc.on('exit', (code) => {
+      // Parse test results from output
+      const passed = (stdout.match(/✓/g) || []).length
+      const failed = (stdout.match(/✗/g) || []).length
+      const skipped = (stdout.match(/⊝/g) || []).length
+      
+      resolve({
+        success: code === 0,
+        passed,
+        failed,
+        skipped
+      })
+    })
+    
+    proc.on('error', reject)
+  })
+}
+```
+
+## Using @bunli/test
+
+The `@bunli/test` package provides utilities for testing CLI commands:
+
+### Installation
+
+```bash
+bun add -d @bunli/test
+```
+
+### Testing Commands
+
+Use `testCommand` to test individual commands:
+
+```typescript
+import { testCommand, expectCommand } from '@bunli/test'
+import myCommand from './commands/my-command'
+
+test('my command works', async () => {
+  const result = await testCommand(myCommand, {
+    args: ['--flag', 'value'],
+    flags: { flag: 'value' }
+  })
+  
+  expectCommand(result).toHaveSucceeded()
+  expectCommand(result).toContainInStdout('Expected output')
+})
+```
+
+### Test Options
+
+The `testCommand` function accepts comprehensive test options:
+
+```typescript
+interface TestOptions {
+  args?: string[]           // Positional arguments
+  flags?: Record<string, any>  // Command flags
+  stdin?: string | string[]    // Mock stdin input
+  env?: Record<string, string> // Environment variables
+  cwd?: string              // Working directory
+  mockPrompts?: Record<string, string | string[]>  // Mock prompt responses
+  mockShellCommands?: Record<string, string>       // Mock shell outputs
+  exitCode?: number         // Expected exit code
+}
+```
+
+### Mock Helpers
+
+Use helper functions to create test options:
+
+```typescript
+import { 
+  mockPromptResponses, 
+  mockShellCommands, 
+  mockInteractive 
+} from '@bunli/test'
+
+// Mock prompt responses
+const result = await testCommand(myCommand, mockPromptResponses({
+  'Enter name:': 'Alice',
+  'Continue?': 'y'
+}))
+
+// Mock shell commands
+const result = await testCommand(buildCommand, mockShellCommands({
+  'git status': 'On branch main\nnothing to commit',
+  'npm --version': '10.2.0'
+}))
+
+// Mock both prompts and shell
+const result = await testCommand(myCommand, mockInteractive(
+  { 'Name:': 'Alice', 'Continue?': 'y' },
+  { 'git status': 'clean' }
+))
+```
+
+### Validation Testing
+
+Test validation retry behavior:
+
+```typescript
+import { mockValidationAttempts } from '@bunli/test'
+
+const result = await testCommand(myCommand, mockValidationAttempts([
+  'invalid-email',
+  'still-bad', 
+  'valid@email.com'
+]))
+```
+
+### Matchers
+
+Use built-in matchers to assert test results:
+
+```typescript
+import { expectCommand } from '@bunli/test'
+
+const result = await testCommand(myCommand)
+
+// Exit code matchers
+expectCommand(result).toHaveExitCode(0)
+expectCommand(result).toHaveSucceeded()
+expectCommand(result).toHaveFailed()
+
+// Output matchers
+expectCommand(result).toContainInStdout('success')
+expectCommand(result).toContainInStderr('error')
+expectCommand(result).toMatchStdout(/pattern/)
+expectCommand(result).toMatchStderr(/error: .+/)
+```
+
+## Test Command Implementation
+
+The `testCommand` function provides a complete mock environment:
+
+```typescript
+// From packages/test/src/test-command.ts:339-369
+try {
+  // Create handler args
+  const handlerArgs: MockHandlerArgs = {
+    flags: options.flags || {},
+    positional: options.args || [],
+    env: { ...process.env, ...(options.env || {}) },
+    cwd: options.cwd || process.cwd(),
+    prompt: mockPrompt,
+    spinner: mockSpinner,
+    shell: mockShell as any,
+    colors: mockColors,
+    terminal: {
+      width: 80,
+      height: 24,
+      isInteractive: false,
+      isCI: true,
+      supportsColor: false,
+      supportsMouse: false
+    },
+    runtime: {
+      startTime: Date.now(),
+      args: options.args || [],
+      command: command.name
+    },
+    signal: new AbortController().signal
+  }
+  
+  // Execute command handler
+  if (command.handler) {
+    await command.handler(handlerArgs as any)
+  }
+}
+```
+
+## Test Result Interface
+
+Test results include comprehensive information:
+
+```typescript
+interface TestResult {
+  stdout: string    // Captured stdout
+  stderr: string    // Captured stderr
+  exitCode: number  // Exit code
+  duration: number  // Execution time in ms
+  error?: Error     // Error if thrown
+}
+```
+
+## Example Test Suite
+
+```typescript
+import { test, expect } from 'bun:test'
+import { testCommand, expectCommand, mockPromptResponses } from '@bunli/test'
+import buildCommand from './commands/build'
+
+test('build command succeeds', async () => {
+  const result = await testCommand(buildCommand, {
+    flags: { minify: true, outdir: './dist' }
+  })
+  
+  expectCommand(result).toHaveSucceeded()
+  expectCommand(result).toContainInStdout('Build complete')
+})
+
+test('build command with custom entry', async () => {
+  const result = await testCommand(buildCommand, {
+    flags: { entry: 'src/cli.ts', minify: false }
+  })
+  
+  expectCommand(result).toHaveSucceeded()
+})
+
+test('release command with prompts', async () => {
+  const result = await testCommand(releaseCommand, mockPromptResponses({
+    'Select version bump:': '1',  // patch
+    'Continue with release?': 'y'
+  }))
+  
+  expectCommand(result).toHaveSucceeded()
+  expectCommand(result).toContainInStdout('Released')
+})
+```
+
+## Configuration
+
+Configure testing in `bunli.config.ts`:
+
+```typescript
+export default defineConfig({
+  test: {
+    pattern: '**/*.test.ts',
+    coverage: false,
+    watch: false
+  },
+  workspace: {
+    packages: ['packages/*']
+  }
+})
+```
+
+## Output Example
+
+```bash
+$ bunli test
+
+⠋ Running tests...
+✅ All tests passed!
+✓ 15 tests passed
+```
+
+With failures:
+
+```bash
+$ bunli test
+
+⠋ Running tests...
+❌ Tests failed
+✗ 2 tests failed
+```
+
+## Environment Variables
+
+The test command sets `NODE_ENV` to `test`:
+
+```typescript
+env: {
+  ...process.env,
+  NODE_ENV: 'test'
+}
+```
+
+## See Also
+
+- [Development Mode](/toolchain/dev-mode) - Run tests in watch mode during development
+- [Building](/toolchain/building) - Run tests before building
+- [@bunli/test API](/api/test) - Full API reference for test utilities

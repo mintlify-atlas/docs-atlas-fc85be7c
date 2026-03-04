@@ -1,0 +1,550 @@
+---
+title: "Hooks"
+description: "React hooks for TUI applications"
+---
+
+## Overview
+
+Bunli TUI provides React hooks for building interactive terminal applications. These hooks integrate with OpenTUI's renderer and give you access to keyboard input, terminal dimensions, rendering, and more.
+
+## Imports
+
+```typescript
+import {
+  useKeyboard,
+  useRenderer,
+  useTerminalDimensions,
+  useTimeline,
+  useOnResize,
+  useTuiTheme,
+  useFormContext,
+  useFormField,
+  useScopedKeyboard
+} from '@bunli/tui'
+```
+
+## OpenTUI Hooks
+
+### useKeyboard
+
+Register keyboard event handlers.
+
+```typescript
+function useKeyboard(
+  handler: (key: KeyEvent) => void | boolean,
+  deps?: React.DependencyList
+): void
+```
+
+#### Parameters
+
+<ParamField path="handler" type="(key: KeyEvent) => void | boolean" required>
+  Callback invoked on key press. Return `true` to mark event as handled and prevent propagation.
+</ParamField>
+
+<ParamField path="deps" type="React.DependencyList">
+  Dependency array for the handler
+</ParamField>
+
+#### KeyEvent Interface
+
+<ResponseField name="name" type="string">
+  Key name (e.g., `'a'`, `'return'`, `'escape'`)
+</ResponseField>
+
+<ResponseField name="sequence" type="string">
+  Raw key sequence
+</ResponseField>
+
+<ResponseField name="ctrl" type="boolean">
+  Whether Ctrl key is pressed
+</ResponseField>
+
+<ResponseField name="shift" type="boolean">
+  Whether Shift key is pressed
+</ResponseField>
+
+<ResponseField name="meta" type="boolean">
+  Whether Meta/Alt key is pressed
+</ResponseField>
+
+#### Example
+
+```typescript
+import { useKeyboard } from '@bunli/tui'
+import { useState } from 'react'
+
+function Counter() {
+  const [count, setCount] = useState(0)
+
+  useKeyboard((key) => {
+    if (key.name === 'up') {
+      setCount(c => c + 1)
+      return true // handled
+    }
+    if (key.name === 'down') {
+      setCount(c => c - 1)
+      return true
+    }
+    return false // not handled
+  }, [count])
+
+  return <text content={`Count: ${count}`} />
+}
+```
+
+### useRenderer
+
+Access the OpenTUI renderer instance.
+
+```typescript
+function useRenderer(): CliRenderer
+```
+
+#### Example
+
+```typescript
+import { useRenderer } from '@bunli/tui'
+
+function Debug() {
+  const renderer = useRenderer()
+
+  return (
+    <box>
+      <text content={`Focused: ${renderer.currentFocusedRenderable?.id ?? 'none'}`} />
+    </box>
+  )
+}
+```
+
+### useTerminalDimensions
+
+Get current terminal width and height.
+
+```typescript
+function useTerminalDimensions(): { width: number; height: number }
+```
+
+#### Example
+
+```typescript
+import { useTerminalDimensions } from '@bunli/tui'
+
+function ResponsiveLayout() {
+  const { width, height } = useTerminalDimensions()
+
+  return (
+    <box>
+      <text content={`Terminal: ${width}x${height}`} />
+      {width > 80 ? (
+        <text content="Wide layout" />
+      ) : (
+        <text content="Narrow layout" />
+      )}
+    </box>
+  )
+}
+```
+
+### useOnResize
+
+Register a handler for terminal resize events.
+
+```typescript
+function useOnResize(
+  handler: (dimensions: { width: number; height: number }) => void,
+  deps?: React.DependencyList
+): void
+```
+
+#### Example
+
+```typescript
+import { useOnResize } from '@bunli/tui'
+import { useState } from 'react'
+
+function ResizeLogger() {
+  const [resizes, setResizes] = useState(0)
+
+  useOnResize(() => {
+    setResizes(r => r + 1)
+  }, [])
+
+  return <text content={`Resized ${resizes} times`} />
+}
+```
+
+### useTimeline
+
+Create an animation timeline with frame-based updates.
+
+```typescript
+function useTimeline(
+  fps?: number
+): {
+  elapsed: number
+  frame: number
+  start: () => void
+  stop: () => void
+  reset: () => void
+}
+```
+
+#### Parameters
+
+<ParamField path="fps" type="number" default="30">
+  Frames per second for the timeline
+</ParamField>
+
+#### Example
+
+```typescript
+import { useTimeline } from '@bunli/tui'
+
+function AnimatedSpinner() {
+  const timeline = useTimeline(10) // 10 FPS
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+  const spinner = frames[timeline.frame % frames.length]
+
+  return <text content={`${spinner} Loading...`} />
+}
+```
+
+## Theme Hooks
+
+### useTuiTheme
+
+Access the current TUI theme.
+
+```typescript
+function useTuiTheme(): TuiTheme
+```
+
+#### Returns
+
+<ResponseField name="tokens" type="TuiThemeTokens">
+  Theme color tokens
+  
+  <Expandable title="properties">
+    <ResponseField name="accent" type="string">
+      Primary accent color
+    </ResponseField>
+    
+    <ResponseField name="background" type="string">
+      Background color
+    </ResponseField>
+    
+    <ResponseField name="backgroundMuted" type="string">
+      Muted background color
+    </ResponseField>
+    
+    <ResponseField name="border" type="string">
+      Border color
+    </ResponseField>
+    
+    <ResponseField name="textPrimary" type="string">
+      Primary text color
+    </ResponseField>
+    
+    <ResponseField name="textMuted" type="string">
+      Muted text color
+    </ResponseField>
+    
+    <ResponseField name="textDanger" type="string">
+      Danger/error text color
+    </ResponseField>
+    
+    <ResponseField name="textSuccess" type="string">
+      Success text color
+    </ResponseField>
+    
+    <ResponseField name="textWarning" type="string">
+      Warning text color
+    </ResponseField>
+    
+    <ResponseField name="textInfo" type="string">
+      Info text color
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example
+
+```typescript
+import { useTuiTheme } from '@bunli/tui'
+
+function ThemedText() {
+  const { tokens } = useTuiTheme()
+
+  return (
+    <box>
+      <text content="Primary" fg={tokens.textPrimary} />
+      <text content="Muted" fg={tokens.textMuted} />
+      <text content="Accent" fg={tokens.accent} />
+    </box>
+  )
+}
+```
+
+## Form Hooks
+
+### useFormContext
+
+Access form context (must be used inside a `<Form>` component).
+
+```typescript
+function useFormContext(): FormContextValue
+```
+
+#### Returns
+
+<ResponseField name="values" type="Record<string, unknown>">
+  Current form values
+</ResponseField>
+
+<ResponseField name="errors" type="Record<string, string>">
+  Validation errors by field name
+</ResponseField>
+
+<ResponseField name="touched" type="Record<string, boolean>">
+  Touched state by field name
+</ResponseField>
+
+<ResponseField name="dirtyFields" type="Record<string, boolean>">
+  Dirty state by field name
+</ResponseField>
+
+<ResponseField name="isDirty" type="boolean">
+  Whether any field has been modified
+</ResponseField>
+
+<ResponseField name="isSubmitting" type="boolean">
+  Whether form is currently submitting
+</ResponseField>
+
+<ResponseField name="isValidating" type="boolean">
+  Whether form is currently validating
+</ResponseField>
+
+<ResponseField name="setFieldValue" type="(name: string, value: unknown) => void">
+  Update a field's value
+</ResponseField>
+
+<ResponseField name="submit" type="() => void">
+  Submit the form
+</ResponseField>
+
+<ResponseField name="reset" type="() => void">
+  Reset form to initial values
+</ResponseField>
+
+#### Example
+
+```typescript
+import { Form, useFormContext } from '@bunli/tui'
+import { z } from 'zod'
+
+const schema = z.object({
+  name: z.string().min(1)
+})
+
+function FormDebug() {
+  const form = useFormContext()
+
+  return (
+    <box>
+      <text content={`Dirty: ${form.isDirty}`} />
+      <text content={`Submitting: ${form.isSubmitting}`} />
+    </box>
+  )
+}
+
+function App() {
+  return (
+    <Form
+      title="My Form"
+      schema={schema}
+      onSubmit={(values) => {
+        console.log(values)
+      }}
+    >
+      <FormDebug />
+    </Form>
+  )
+}
+```
+
+### useFormField
+
+Register and manage a form field.
+
+```typescript
+function useFormField<T = unknown>(
+  name: string,
+  options?: UseFormFieldOptions<T>
+): UseFormFieldResult<T>
+```
+
+#### Parameters
+
+<ParamField path="name" type="string" required>
+  Field name (must match schema property)
+</ParamField>
+
+<ParamField path="options" type="UseFormFieldOptions<T>">
+  <Expandable title="properties">
+    <ParamField path="defaultValue" type="T">
+      Default value for the field
+    </ParamField>
+    
+    <ParamField path="submitOnEnter" type="boolean" default="true">
+      Whether pressing Enter submits the form
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Returns
+
+<ResponseField name="value" type="T">
+  Current field value
+</ResponseField>
+
+<ResponseField name="error" type="string | undefined">
+  Validation error message
+</ResponseField>
+
+<ResponseField name="touched" type="boolean">
+  Whether field has been touched
+</ResponseField>
+
+<ResponseField name="dirty" type="boolean">
+  Whether field value has changed
+</ResponseField>
+
+<ResponseField name="active" type="boolean">
+  Whether field is currently focused
+</ResponseField>
+
+<ResponseField name="setValue" type="(value: T) => void">
+  Update field value
+</ResponseField>
+
+<ResponseField name="markTouched" type="() => void">
+  Mark field as touched
+</ResponseField>
+
+<ResponseField name="focus" type="() => void">
+  Focus the field
+</ResponseField>
+
+#### Example
+
+```typescript
+import { Form, useFormField } from '@bunli/tui'
+import { z } from 'zod'
+
+const schema = z.object({
+  email: z.string().email()
+})
+
+function EmailField() {
+  const field = useFormField<string>('email', {
+    defaultValue: ''
+  })
+
+  return (
+    <box style={{ flexDirection: 'column' }}>
+      <text content={`Email: ${field.value}`} />
+      {field.error && <text content={field.error} fg="#ff0000" />}
+      {field.active && <text content="(focused)" />}
+    </box>
+  )
+}
+```
+
+## Keyboard Scope Hooks
+
+### useScopedKeyboard
+
+Register a keyboard handler with priority and scope support.
+
+```typescript
+function useScopedKeyboard(
+  scopeId: string,
+  handler: (key: KeyEvent) => boolean,
+  options?: UseScopedKeyboardOptions
+): void
+```
+
+#### Parameters
+
+<ParamField path="scopeId" type="string" required>
+  Unique identifier for this keyboard scope
+</ParamField>
+
+<ParamField path="handler" type="(key: KeyEvent) => boolean" required>
+  Handler function. Return `true` to mark event as handled.
+</ParamField>
+
+<ParamField path="options" type="UseScopedKeyboardOptions">
+  <Expandable title="properties">
+    <ParamField path="active" type="boolean" default="true">
+      Whether this handler is active
+    </ParamField>
+    
+    <ParamField path="priority" type="number" default="0">
+      Handler priority. Higher priority handlers run first.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Example
+
+```typescript
+import { useScopedKeyboard } from '@bunli/tui'
+import { useState } from 'react'
+
+function Modal({ isOpen, onClose }) {
+  useScopedKeyboard(
+    'modal',
+    (key) => {
+      if (key.name === 'escape') {
+        onClose()
+        return true
+      }
+      return false
+    },
+    { active: isOpen, priority: 100 }
+  )
+
+  if (!isOpen) return null
+
+  return (
+    <box border>
+      <text content="Press Esc to close" />
+    </box>
+  )
+}
+```
+
+## Best Practices
+
+<Card title="Dependency Arrays" icon="link">
+  Always provide dependency arrays to `useKeyboard` and `useOnResize` to avoid stale closures
+</Card>
+
+<Card title="Keyboard Scopes" icon="layer-group">
+  Use `useScopedKeyboard` with priorities for modals and overlays to prevent key conflicts
+</Card>
+
+<Card title="Performance" icon="gauge">
+  - Use `useTimeline` for animations instead of `setInterval`
+  - Debounce expensive operations in `useOnResize`
+  - Return `true` from keyboard handlers to stop propagation
+</Card>
+
+<Card title="Form Validation" icon="check-circle">
+  - Use `useFormField` for custom form inputs
+  - Leverage schema validation instead of manual checks
+  - Show errors only after field is touched
+</Card>

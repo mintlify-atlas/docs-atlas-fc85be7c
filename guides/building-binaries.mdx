@@ -1,0 +1,584 @@
+---
+title: Building Binaries
+description: Compile your CLI to standalone executables for multiple platforms
+---
+
+Bunli lets you compile your CLI to standalone executables using Bun's native compilation. Deploy cross-platform binaries with no runtime dependencies.
+
+## Quick Start
+
+Build a single executable for your current platform:
+
+```bash
+bunli build --targets native
+```
+
+This creates a standalone binary in `dist/` that users can run without installing Node.js or Bun.
+
+## Build Configuration
+
+Configure builds in `bunli.config.ts`:
+
+```typescript
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'mycli',
+  version: '1.0.0',
+  build: {
+    entry: './cli.ts',           // Entry point
+    outdir: './dist',             // Output directory
+    targets: ['native'],          // Compile for current platform
+    minify: true,                 // Minify output
+    sourcemap: true,              // Generate sourcemaps
+    compress: false,              // Compress builds
+    external: []                  // External dependencies
+  }
+})
+```
+
+**Source:** `packages/core/src/config.ts:64-78`
+
+## Compilation Targets
+
+Compile for multiple platforms:
+
+```bash
+# Single platform
+bunli build --targets darwin-arm64
+
+# Multiple platforms
+bunli build --targets darwin-arm64,linux-x64,windows-x64
+
+# All platforms
+bunli build --targets all
+
+# Current platform
+bunli build --targets native
+```
+
+Available targets:
+- `darwin-arm64` - macOS Apple Silicon
+- `darwin-x64` - macOS Intel
+- `linux-arm64` - Linux ARM64
+- `linux-x64` - Linux x64
+- `windows-x64` - Windows x64
+
+**Source:** `packages/cli/src/commands/build.ts:145-153`
+
+## Build Process
+
+Here's what happens during a build:
+
+<Steps>
+  <Step title="Type generation">
+    ```bash
+    Generating types...
+    ✓ Types generated
+    ```
+    
+    Scans commands and generates `.bunli/commands.gen.ts` for type safety.
+  </Step>
+  
+  <Step title="Compilation">
+    ```bash
+    Building CLI...
+    Compiling to standalone executable...
+    Compiling for darwin-arm64...
+    ```
+    
+    Uses Bun's `--compile` flag to create native executables.
+  </Step>
+  
+  <Step title="Output">
+    ```bash
+    ✓ Build complete!
+    Output size: 45M dist
+    ```
+    
+    Creates executables in `dist/` directory.
+  </Step>
+</Steps>
+
+**Source:** `packages/cli/src/commands/build.ts:137-230`
+
+## Build Command Options
+
+```bash
+# Entry file
+bunli build --entry ./src/cli.ts
+
+# Output directory
+bunli build --outdir ./build
+
+# Output filename (single target only)
+bunli build --outfile mycli
+
+# Minification
+bunli build --minify
+bunli build --no-minify
+
+# Source maps
+bunli build --sourcemap
+bunli build --no-sourcemap
+
+# Bytecode compilation (experimental)
+bunli build --bytecode
+
+# Runtime target (for non-compiled builds)
+bunli build --runtime bun
+bunli build --runtime node
+
+# Watch mode
+bunli build --watch
+```
+
+**Source:** `packages/cli/src/commands/build.ts:28-68`
+
+## Cross-Platform Builds
+
+Build for all platforms at once:
+
+```typescript
+// bunli.config.ts
+export default defineConfig({
+  name: 'mycli',
+  version: '1.0.0',
+  build: {
+    targets: [
+      'darwin-arm64',
+      'darwin-x64',
+      'linux-arm64',
+      'linux-x64',
+      'windows-x64'
+    ],
+    compress: true  // Create .tar.gz for each platform
+  }
+})
+```
+
+```bash
+bunli build
+```
+
+Output:
+```
+dist/
+  darwin-arm64.tar.gz
+  darwin-x64.tar.gz
+  linux-arm64.tar.gz
+  linux-x64.tar.gz
+  windows-x64.tar.gz
+```
+
+**Source:** `packages/cli/src/commands/build.ts:190-196`
+
+## Non-Compiled Builds
+
+Build without compilation for faster iteration:
+
+```bash
+# Build JavaScript bundle (no compilation)
+bunli build --runtime bun
+
+# Node.js compatible
+bunli build --runtime node
+```
+
+Creates executable JavaScript with shebang:
+
+```javascript
+#!/usr/bin/env bun
+// Your bundled code...
+```
+
+**Source:** `packages/cli/src/commands/build.ts:197-230`
+
+## Build Implementation
+
+Here's how Bunli builds executables:
+
+```typescript
+// packages/cli/src/commands/build.ts
+async function runBuild(flags, spinner, colors) {
+  const config = await loadConfig()
+  
+  // 1. Generate types
+  const spin = spinner('Generating types...')
+  const generator = new Generator({
+    entry: config.commands?.entry || entryFile,
+    directory: config.commands?.directory,
+    outputFile: './.bunli/commands.gen.ts',
+    config,
+    generateReport: config.commands?.generateReport
+  })
+  await generator.run()
+  spin.succeed('Types generated')
+  
+  const outdir = flags.outdir || config.build?.outdir || './dist'
+  const targets = flags.targets || config.build?.targets
+  const isCompiling = Boolean(targets && targets.length > 0)
+  
+  // 2. Clean output directory
+  await $`rm -rf ${outdir}`
+  await $`mkdir -p ${outdir}`
+  
+  if (isCompiling) {
+    // 3. Compile to native executables
+    const spin = spinner('Compiling to standalone executable...')
+    
+    for (const platform of targets) {
+      spin.update(`Compiling for ${platform}...`)
+      
+      const targetDir = path.join(outdir, platform)
+      await $`mkdir -p ${targetDir}`
+      
+      const outfile = path.join(targetDir, 'cli')
+      
+      const compileArgs = [
+        'build',
+        entryFile,
+        '--compile',
+        '--outfile', outfile,
+        '--target', `bun-${platform}`
+      ]
+      
+      if (flags.minify ?? config.build?.minify ?? true) {
+        compileArgs.push('--minify')
+      }
+      if (flags.sourcemap ?? config.build?.sourcemap ?? false) {
+        compileArgs.push('--sourcemap')
+      }
+      if (flags.bytecode) {
+        compileArgs.push('--bytecode')
+      }
+      
+      await $`bun ${compileArgs}`.quiet()
+    }
+    
+    // 4. Compress builds (optional)
+    if (config.build?.compress) {
+      spin.update('Compressing builds...')
+      for (const platform of targets) {
+        await $`cd ${outdir} && tar -czf ${platform}.tar.gz ${platform}`
+        await $`rm -rf ${outdir}/${platform}`
+      }
+    }
+    
+    spin.succeed('Build complete!')
+  } else {
+    // 3. Build JavaScript bundle
+    const result = await Bun.build({
+      entrypoints: [entryFile],
+      outdir,
+      target: flags.runtime || 'bun',
+      format: 'esm',
+      minify: flags.minify ?? config.build?.minify ?? true,
+      sourcemap: flags.sourcemap ?? config.build?.sourcemap ?? false,
+      external: config.build?.external || []
+    })
+    
+    // 4. Add shebang for execution
+    for (const output of result.outputs) {
+      if (output.path.endsWith('.js')) {
+        const content = await output.text()
+        const runtime = flags.runtime === 'node' ? 'node' : 'bun'
+        const withShebang = `#!/usr/bin/env ${runtime}\n${content}`
+        await Bun.write(output.path, withShebang)
+        await $`chmod +x ${output.path}`
+      }
+    }
+  }
+  
+  // 5. Show build size
+  const stats = await $`du -sh ${outdir}`.text()
+  console.log(colors.dim(`Output size: ${stats.trim()}`))
+}
+```
+
+**Source:** `packages/cli/src/commands/build.ts:76-240`
+
+## External Dependencies
+
+Mark dependencies as external to exclude from bundle:
+
+```typescript
+// bunli.config.ts
+export default defineConfig({
+  build: {
+    external: [
+      'fsevents',      // Platform-specific
+      '@swc/core',     // Native modules
+      'esbuild'        // Large dependencies
+    ]
+  }
+})
+```
+
+**Source:** `packages/cli/src/commands/build.ts:179-182`, `packages/core/src/config.ts:71`
+
+## Compression
+
+Compress builds for distribution:
+
+```typescript
+// bunli.config.ts
+export default defineConfig({
+  build: {
+    targets: ['darwin-arm64', 'linux-x64', 'windows-x64'],
+    compress: true  // Creates .tar.gz for each platform
+  }
+})
+```
+
+Output:
+```
+dist/
+  darwin-arm64.tar.gz    # macOS ARM binary
+  linux-x64.tar.gz       # Linux x64 binary
+  windows-x64.tar.gz     # Windows x64 binary
+```
+
+**Source:** `packages/cli/src/commands/build.ts:190-196`
+
+## Distribution
+
+Distribute your binaries:
+
+### 1. Direct Download
+
+```bash
+# GitHub Releases
+gh release create v1.0.0 \
+  dist/darwin-arm64.tar.gz \
+  dist/linux-x64.tar.gz \
+  dist/windows-x64.tar.gz
+```
+
+### 2. Install Script
+
+```bash
+# install.sh
+curl -fsSL https://example.com/install.sh | bash
+```
+
+```bash
+#!/bin/bash
+# install.sh
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+
+if [ "$ARCH" = "x86_64" ]; then
+  ARCH="x64"
+elif [ "$ARCH" = "aarch64" ]; then
+  ARCH="arm64"
+fi
+
+URL="https://github.com/user/repo/releases/latest/download/${OS}-${ARCH}.tar.gz"
+curl -fsSL "$URL" | tar -xz -C /usr/local/bin
+```
+
+### 3. npm Distribution
+
+Publish binaries via npm:
+
+```typescript
+// bunli.config.ts
+export default defineConfig({
+  name: 'mycli',
+  version: '1.0.0',
+  release: {
+    npm: true,
+    binary: {
+      packageNameFormat: '{{name}}-{{platform}}',
+      shimPath: 'bin/run.mjs'
+    }
+  }
+})
+```
+
+**Source:** `packages/core/src/config.ts:116-121`
+
+## Watch Mode
+
+Rebuild automatically on changes:
+
+```bash
+bunli build --watch
+```
+
+Use during development to test compiled builds.
+
+**Source:** `packages/cli/src/commands/build.ts:64-67`
+
+## Bytecode Compilation
+
+Experimental bytecode compilation for smaller binaries:
+
+```bash
+bunli build --bytecode
+```
+
+**Note:** This is experimental and may not work with all dependencies.
+
+**Source:** `packages/cli/src/commands/build.ts:48-51`
+
+## Source Maps
+
+Generate source maps for debugging:
+
+```bash
+# Enable source maps
+bunli build --sourcemap
+
+# Disable source maps
+bunli build --no-sourcemap
+```
+
+```typescript
+// bunli.config.ts
+export default defineConfig({
+  build: {
+    sourcemap: true  // Default: true
+  }
+})
+```
+
+**Source:** `packages/core/src/config.ts:72`
+
+## Testing Builds
+
+Test your compiled binary:
+
+```bash
+# Build for current platform
+bunli build --targets native
+
+# Test the binary
+./dist/mycli --help
+./dist/mycli build --outdir ./test
+```
+
+## Minification
+
+Minify output for smaller binaries:
+
+```bash
+# Enable minification (default)
+bunli build --minify
+
+# Disable minification
+bunli build --no-minify
+```
+
+```typescript
+// bunli.config.ts
+export default defineConfig({
+  build: {
+    minify: true  // Default: false
+  }
+})
+```
+
+**Source:** `packages/cli/src/commands/build.ts:40-43`, `packages/core/src/config.ts:70`
+
+## CI/CD Integration
+
+Build binaries in GitHub Actions:
+
+```yaml
+# .github/workflows/build.yml
+name: Build Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      
+      - run: bun install
+      
+      - run: bunli build --targets all
+      
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*.tar.gz
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Build fails with 'command not found'">
+    Ensure `bunli` is installed globally or use `bun run bunli build`. Check that your entry file exists.
+  </Accordion>
+  
+  <Accordion title="Binary is very large">
+    Enable minification with `--minify` and consider marking large dependencies as external.
+  </Accordion>
+  
+  <Accordion title="Import errors in compiled binary">
+    Check that all imports use `.js` extensions. Bun requires explicit extensions for ESM.
+  </Accordion>
+  
+  <Accordion title="Platform-specific build issues">
+    Some native modules may not compile for all platforms. Mark them as external or use fallbacks.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Test on target platforms">
+    Always test binaries on actual target platforms before releasing.
+  </Accordion>
+  
+  <Accordion title="Use compression for distribution">
+    Enable `compress: true` to reduce download sizes:
+    ```typescript
+    build: { compress: true }
+    ```
+  </Accordion>
+  
+  <Accordion title="Keep binaries small">
+    - Enable minification
+    - Mark large dependencies as external
+    - Avoid bundling unnecessary files
+  </Accordion>
+  
+  <Accordion title="Version your releases">
+    Tag releases in git and include version in binary names:
+    ```bash
+    git tag v1.0.0
+    bunli build --targets all
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Type Generation" icon="code" href="/guides/type-generation">
+    Automatic types for compiled CLIs
+  </Card>
+  
+  <Card title="Release Process" icon="rocket" href="/cli/release">
+    Publish your binaries to npm and GitHub
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/core/configuration">
+    Advanced build configuration options
+  </Card>
+  
+  <Card title="Defining Commands" icon="terminal" href="/guides/defining-commands">
+    Create commands for your compiled CLI
+  </Card>
+</CardGroup>

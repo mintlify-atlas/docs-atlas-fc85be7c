@@ -1,0 +1,282 @@
+---
+title: Why Bunli?
+description: Learn why Bunli is the best choice for building CLIs with Bun, and how it compares to alternatives
+---
+
+Bunli was created to provide a modern, type-safe CLI development experience that takes full advantage of Bun's unique capabilities. If you're building command-line tools with Bun, Bunli eliminates boilerplate while giving you powerful features out of the box.
+
+## The problem with existing CLI frameworks
+
+Traditional CLI frameworks for Node.js have several limitations:
+
+- **Limited type safety** - Manual type assertions and runtime validation
+- **Slow startup** - Node.js initialization overhead affects CLI performance
+- **Complex builds** - Multiple tools needed for bundling, compilation, and testing
+- **No native shell** - External dependencies for running shell commands
+- **Basic UIs** - Simple text output without interactive capabilities
+
+Bunli solves these problems by building on Bun's foundation.
+
+## What makes Bunli different
+
+### Full type safety with Zod integration
+
+Bunli uses Zod schemas for option definitions, providing both runtime validation and compile-time type inference:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+const command = defineCommand({
+  name: 'deploy',
+  options: {
+    environment: option(
+      z.enum(['dev', 'staging', 'production']),
+      { short: 'e', description: 'Target environment' }
+    ),
+    force: option(
+      z.coerce.boolean().default(false),
+      { short: 'f', description: 'Force deployment' }
+    ),
+    replicas: option(
+      z.coerce.number().int().positive().default(3),
+      { short: 'r', description: 'Number of replicas' }
+    )
+  },
+  handler: async ({ flags }) => {
+    // TypeScript knows:
+    // - flags.environment is 'dev' | 'staging' | 'production'
+    // - flags.force is boolean
+    // - flags.replicas is number
+    await deploy(flags.environment, flags.force, flags.replicas)
+  }
+})
+```
+
+<Tip>
+No type assertions needed! The `flags` object is automatically typed based on your Zod schemas.
+</Tip>
+
+### Native Bun Shell integration
+
+Every handler receives Bun's shell (`$`) directly, with no external dependencies:
+
+```typescript
+handler: async ({ shell, flags }) => {
+  // Bun Shell with template literals
+  await shell`docker build -t ${flags.image} .`
+  await shell`docker push ${flags.image}`
+  
+  // Automatic escaping and error handling
+  const result = await shell`git status --porcelain`.text()
+  if (result) {
+    throw new Error('Working directory not clean')
+  }
+}
+```
+
+### React-powered terminal UIs
+
+Bunli includes `@bunli/tui` with OpenTUI-backed components for building rich interactive experiences:
+
+```tsx
+import { defineCommand } from '@bunli/core'
+import { ProgressBar, useKeyboard, useRenderer } from '@bunli/tui'
+import { useState, useEffect } from 'react'
+
+const command = defineCommand({
+  name: 'install',
+  render: ({ flags }) => {
+    const [progress, setProgress] = useState(0)
+    const renderer = useRenderer()
+    
+    useKeyboard((key) => {
+      if (key.name === 'q') renderer.destroy()
+    })
+    
+    useEffect(() => {
+      // Simulate installation progress
+      const interval = setInterval(() => {
+        setProgress(p => Math.min(p + 10, 100))
+      }, 200)
+      return () => clearInterval(interval)
+    }, [])
+    
+    return (
+      <ProgressBar
+        value={progress}
+        label={`Installing ${flags.package}...`}
+        color="#22c55e"
+      />
+    )
+  },
+  handler: async ({ flags }) => {
+    // Actual installation logic
+  }
+})
+```
+
+<Note>
+Bunli commands can have both a `handler` (for headless execution) and a `render` function (for interactive TUI). The framework automatically chooses based on the terminal capabilities.
+</Note>
+
+### Powerful plugin architecture
+
+Plugins extend functionality with typed stores that are accessible in all command handlers:
+
+```typescript
+import { createPlugin } from '@bunli/core/plugin'
+
+// Define plugin with typed store
+interface MetricsStore {
+  commandCount: number
+  startTime: number
+}
+
+const metricsPlugin = createPlugin<MetricsStore>({
+  name: 'metrics',
+  store: {
+    commandCount: 0,
+    startTime: Date.now()
+  },
+  beforeCommand(context) {
+    // TypeScript knows store.commandCount is a number
+    context.store.commandCount++
+    console.log(`Command #${context.store.commandCount}`)
+  },
+  afterCommand(context) {
+    const duration = Date.now() - context.store.startTime
+    console.log(`Completed in ${duration}ms`)
+  }
+})
+
+// Use in CLI config
+const cli = await createCLI({
+  name: 'my-cli',
+  version: '1.0.0',
+  plugins: [metricsPlugin]
+})
+```
+
+**Official plugins included:**
+- `@bunli/plugin-ai-detect` - Detect AI coding assistants (Claude, Cursor, Copilot)
+- `@bunli/plugin-completions` - Generate shell completions
+- `@bunli/plugin-config` - Load and merge configuration files
+- `@bunli/plugin-mcp` - Model Context Protocol integration
+
+### Integrated development toolchain
+
+The `bunli` CLI provides everything you need for development:
+
+```bash
+# Hot-reload development with instant restarts
+bunli dev
+
+# Run tests with coverage
+bunli test --coverage
+
+# Build standalone binary for distribution
+bunli build --compile
+
+# Generate TypeScript types from commands
+bunli generate
+
+# Generate shell completions
+bunli completions --shell zsh
+```
+
+<Tip>
+Bunli's dev mode uses Bun's watch mode for instant hot-reloading. Changes to your commands are reflected immediately without restarting the process.
+</Tip>
+
+### Standalone binary compilation
+
+Compile your CLI to a single executable with all dependencies included:
+
+```bash
+bunli build --compile
+```
+
+This creates standalone binaries for your platform that can be distributed without requiring Bun or Node.js to be installed.
+
+## Comparison with alternatives
+
+### Commander.js / Yargs
+
+**Limitations:**
+- Manual type definitions required
+- No built-in validation
+- Node.js-only
+- No TUI capabilities
+- No plugin system
+
+**Bunli advantages:**
+- Automatic type inference from schemas
+- Built-in validation with Zod
+- Bun-native with faster startup
+- React-based TUI components
+- Extensible plugin architecture
+
+### Oclif
+
+**Limitations:**
+- Heavy framework with many dependencies
+- Class-based architecture with decorators
+- Slower startup time
+- Complex plugin development
+
+**Bunli advantages:**
+- Minimal core with zero runtime dependencies
+- Function-based API with hooks
+- Instant startup with Bun
+- Simple plugin creation with typed stores
+
+### Ink (React for CLIs)
+
+**Limitations:**
+- Node.js-only
+- Requires separate CLI framework
+- No command parsing
+- No validation
+
+**Bunli advantages:**
+- Integrated with command parsing
+- Bun-native with OpenTUI renderer
+- Built-in validation and type safety
+- Optional TUI - commands work without it
+
+## When to use Bunli
+
+Bunli is ideal for:
+
+✅ **New CLI projects** - Start with the best practices baked in
+
+✅ **Developer tools** - Fast startup matters for tools run frequently
+
+✅ **Interactive applications** - Build rich TUIs with React components
+
+✅ **Type-safe CLIs** - Leverage TypeScript's full power
+
+✅ **Bun-first projects** - Take advantage of Bun's ecosystem
+
+Bunli may not be right if:
+
+❌ You need Node.js compatibility (Bunli requires Bun)
+
+❌ You're maintaining a legacy CLI with established patterns
+
+❌ You need Windows support (Bun's Windows support is experimental)
+
+## Getting started
+
+Ready to build with Bunli? Start with the quickstart guide:
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Create your first Bunli CLI in 5 minutes
+</Card>
+
+Or explore the architecture to understand how Bunli works:
+
+<Card title="Architecture" icon="diagram-project" href="/architecture">
+  Learn about Bunli's design and structure
+</Card>

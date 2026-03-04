@@ -1,0 +1,657 @@
+---
+title: Your First CLI
+description: Build a complete CLI from scratch with step-by-step guidance
+icon: code
+---
+
+In this tutorial, you'll build a real CLI tool from the ground up. By the end, you'll have a working **task runner** with validation, spinners, and colored output.
+
+<Note>
+  This guide assumes you've completed the [Installation](/getting-started/installation) steps. You should have Bun and Bunli installed.
+</Note>
+
+## What You'll Build
+
+A `task` CLI with a `build` command that:
+- Accepts environment options (dev, staging, production)
+- Validates output directory paths
+- Parses JSON configuration
+- Shows progress with spinners
+- Provides colored terminal output
+
+## Project Setup
+
+<Steps>
+  <Step title="Create project directory">
+    Create a new directory for your CLI:
+
+    ```bash
+    mkdir task-cli
+    cd task-cli
+    ```
+  </Step>
+
+  <Step title="Initialize package.json">
+    Create a `package.json` file:
+
+    ```bash
+    bun init -y
+    ```
+
+    Then edit it to add the necessary fields:
+
+    ```json package.json
+    {
+      "name": "task-cli",
+      "version": "0.1.0",
+      "type": "module",
+      "description": "A task runner CLI built with Bunli",
+      "bin": {
+        "task": "./dist/index.js"
+      },
+      "scripts": {
+        "dev": "bun run src/index.ts",
+        "build": "bunli build",
+        "typecheck": "tsc --noEmit"
+      }
+    }
+    ```
+
+    <Note>
+      The `"type": "module"` field is required to use ES modules.
+    </Note>
+  </Step>
+
+  <Step title="Install dependencies">
+    Install Bunli core framework and Zod for validation:
+
+    <CodeGroup>
+
+    ```bash bun
+    bun add @bunli/core zod
+    bun add -d bunli typescript @types/bun
+    ```
+
+    ```bash npm
+    npm install @bunli/core zod
+    npm install -D bunli typescript @types/bun
+    ```
+
+    ```bash yarn
+    yarn add @bunli/core zod
+    yarn add -D bunli typescript @types/bun
+    ```
+
+    ```bash pnpm
+    pnpm add @bunli/core zod
+    pnpm add -D bunli typescript @types/bun
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Configure TypeScript">
+    Create a `tsconfig.json` file:
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "lib": ["ESNext"],
+        "moduleResolution": "bundler",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "resolveJsonModule": true,
+        "types": ["bun-types"]
+      },
+      "include": ["src/**/*"],
+      "exclude": ["node_modules", "dist"]
+    }
+    ```
+  </Step>
+
+  <Step title="Create source directory">
+    Create the directory structure:
+
+    ```bash
+    mkdir -p src/commands
+    ```
+  </Step>
+</Steps>
+
+## Creating Your First Command
+
+Now let's build the `build` command with real-world features.
+
+<Steps>
+  <Step title="Define the build command">
+    Create `src/commands/build.ts`:
+
+    ```typescript src/commands/build.ts
+    import { defineCommand, option } from '@bunli/core'
+    import { z } from 'zod'
+
+    export default defineCommand({
+      name: 'build',
+      description: 'Build project with validation and transformation',
+      options: {
+        // Environment with enum validation
+        env: option(
+          z.enum(['development', 'staging', 'production'])
+            .default('development'),
+          { 
+            short: 'e', 
+            description: 'Build environment' 
+          }
+        ),
+        
+        // Output directory with validation
+        outdir: option(
+          z.string()
+            .min(1, 'Output directory cannot be empty')
+            .default('dist'),
+          { 
+            short: 'o', 
+            description: 'Output directory' 
+          }
+        ),
+        
+        // Watch mode boolean
+        watch: option(
+          z.coerce.boolean().default(false),
+          { 
+            short: 'w', 
+            description: 'Watch for changes' 
+          }
+        )
+      },
+      
+      handler: async ({ flags, colors, spinner }) => {
+        const spin = spinner('Building project...')
+        
+        try {
+          // Simulate build process
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          
+          spin.update('Validating configuration...')
+          await new Promise(resolve => setTimeout(resolve, 500))
+          
+          spin.update('Compiling assets...')
+          await new Promise(resolve => setTimeout(resolve, 800))
+          
+          spin.succeed('Build completed successfully!')
+          
+          console.log(colors.bold('\nBuild Summary:'))
+          console.log(`  Environment: ${colors.cyan(flags.env)}`)
+          console.log(`  Output: ${colors.cyan(flags.outdir)}`)
+          
+          if (flags.watch) {
+            console.log(colors.yellow('\nWatching for changes...'))
+          }
+          
+        } catch (error) {
+          spin.fail('Build failed')
+          console.error(colors.red(`Error: ${error instanceof Error ? error.message : String(error)}`))
+          throw error
+        }
+      }
+    })
+    ```
+
+    <Tip>
+      The handler context provides utilities like `spinner` for progress indicators and `colors` for terminal styling.
+    </Tip>
+  </Step>
+
+  <Step title="Create CLI entry point">
+    Create `src/index.ts` to wire up your command:
+
+    ```typescript src/index.ts
+    #!/usr/bin/env bun
+    import { createCLI } from '@bunli/core'
+    import buildCommand from './commands/build.js'
+
+    const cli = await createCLI({
+      name: 'task',
+      version: '0.1.0',
+      description: 'A task runner CLI built with Bunli'
+    })
+
+    cli.command(buildCommand)
+
+    await cli.run()
+    ```
+
+    <Note>
+      Notice the `.js` extension in the import, even though we're writing TypeScript. This is required for ES modules in Bunli.
+    </Note>
+  </Step>
+
+  <Step title="Run your CLI">
+    Test your CLI in development mode:
+
+    ```bash
+    bun run dev build
+    ```
+
+    Expected output:
+    ```
+    ⠋ Building project...
+    ⠙ Validating configuration...
+    ⠹ Compiling assets...
+    ✓ Build completed successfully!
+
+    Build Summary:
+      Environment: development
+      Output: dist
+    ```
+
+    Try different options:
+
+    ```bash
+    # Production build
+    bun run dev build --env production --outdir build
+
+    # With watch mode
+    bun run dev build -w
+
+    # Short flags
+    bun run dev build -e staging -o out -w
+    ```
+  </Step>
+</Steps>
+
+## Understanding the Code
+
+### Command Options
+
+Each option uses Zod for schema validation and type inference:
+
+```typescript
+env: option(
+  z.enum(['development', 'staging', 'production']).default('development'),
+  { short: 'e', description: 'Build environment' }
+)
+```
+
+- **Schema**: `z.enum()` restricts values to specific strings
+- **Default**: `.default()` provides a fallback value
+- **Metadata**: `short` creates a `-e` alias, `description` shows in help
+
+### Type Coercion
+
+Booleans from CLI args are strings by default. Use `z.coerce.boolean()` to convert:
+
+```typescript
+watch: option(
+  z.coerce.boolean().default(false),
+  { short: 'w', description: 'Watch for changes' }
+)
+```
+
+Now both `--watch` and `--watch=true` work correctly.
+
+### Handler Context
+
+The handler receives a context object with utilities:
+
+```typescript
+handler: async ({ flags, colors, spinner }) => {
+  // flags: Your validated, type-safe options
+  // colors: Terminal color utilities
+  // spinner: Progress indicator utilities
+}
+```
+
+## Adding More Commands
+
+Let's add a `clean` command to demonstrate multi-command CLIs.
+
+<Steps>
+  <Step title="Create the clean command">
+    Create `src/commands/clean.ts`:
+
+    ```typescript src/commands/clean.ts
+    import { defineCommand, option } from '@bunli/core'
+    import { z } from 'zod'
+
+    export default defineCommand({
+      name: 'clean',
+      description: 'Remove build artifacts',
+      options: {
+        force: option(
+          z.coerce.boolean().default(false),
+          {
+            short: 'f',
+            description: 'Force delete without confirmation'
+          }
+        ),
+        verbose: option(
+          z.coerce.boolean().default(false),
+          {
+            short: 'v',
+            description: 'Show detailed output'
+          }
+        )
+      },
+      handler: async ({ flags, colors, spinner }) => {
+        if (!flags.force) {
+          console.log(colors.yellow('⚠️  This will delete all build artifacts'))
+          console.log('Run with --force to proceed')
+          return
+        }
+
+        const spin = spinner('Cleaning build artifacts...')
+        
+        // Simulate cleanup
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+        if (flags.verbose) {
+          spin.info('Removing dist/ directory')
+          spin.info('Removing node_modules/.cache')
+          spin.info('Removing .bunli/ generated files')
+        }
+        
+        spin.succeed('Clean completed!')
+      }
+    })
+    ```
+  </Step>
+
+  <Step title="Register the command">
+    Update `src/index.ts` to include the new command:
+
+    ```typescript src/index.ts
+    #!/usr/bin/env bun
+    import { createCLI } from '@bunli/core'
+    import buildCommand from './commands/build.js'
+    import cleanCommand from './commands/clean.js'
+
+    const cli = await createCLI({
+      name: 'task',
+      version: '0.1.0',
+      description: 'A task runner CLI built with Bunli'
+    })
+
+    cli.command(buildCommand)
+    cli.command(cleanCommand)
+
+    await cli.run()
+    ```
+  </Step>
+
+  <Step title="Test the new command">
+    Try the clean command:
+
+    ```bash
+    # Without force (shows warning)
+    bun run dev clean
+
+    # With force
+    bun run dev clean --force
+
+    # Verbose mode
+    bun run dev clean -f -v
+    ```
+  </Step>
+</Steps>
+
+## Advanced Features
+
+### Complex Validation and Transformation
+
+Zod schemas can include transformations:
+
+```typescript
+memory: option(
+  z.string()
+    .regex(/^\d+[kmg]?$/i, 'Memory must be a number with optional unit (k, m, g)')
+    .optional()
+    .transform((val) => {
+      const raw = val ?? '512m'
+      const num = parseInt(raw)
+      const unit = raw.slice(-1).toLowerCase()
+      const multipliers = { k: 1024, m: 1024 * 1024, g: 1024 * 1024 * 1024 }
+      return num * (multipliers[unit as keyof typeof multipliers] || 1)
+    }),
+  { short: 'm', description: 'Memory limit (e.g., 512m, 2g)' }
+)
+```
+
+This accepts inputs like `512m` or `2g` and converts them to bytes.
+
+### Parsing Complex Inputs
+
+Handle key-value pairs:
+
+```typescript
+variables: option(
+  z.string()
+    .transform((val) => {
+      const vars: Record<string, string> = {}
+      val.split(',').forEach(pair => {
+        const [key, value] = pair.split('=')
+        if (key && value) {
+          vars[key.trim()] = value.trim()
+        }
+      })
+      return vars
+    })
+    .optional(),
+  { 
+    short: 'v', 
+    description: 'Environment variables (key1=value1,key2=value2)' 
+  }
+)
+```
+
+Usage:
+```bash
+bun run dev build --variables "NODE_ENV=production,API_URL=https://api.example.com"
+```
+
+## Building for Production
+
+<Steps>
+  <Step title="Configure Bunli">
+    Create a `bunli.config.ts` file:
+
+    ```typescript bunli.config.ts
+    import { defineConfig } from 'bunli'
+
+    export default defineConfig({
+      entry: './src/index.ts',
+      outDir: './dist'
+    })
+    ```
+  </Step>
+
+  <Step title="Build the CLI">
+    Compile your CLI to a standalone binary:
+
+    ```bash
+    bun run build
+    ```
+
+    Expected output:
+    ```
+    Building CLI...
+    ✓ Compiled successfully
+    ✓ Generated: ./dist/index.js
+    ```
+  </Step>
+
+  <Step title="Test the built CLI">
+    Run your production build:
+
+    ```bash
+    ./dist/index.js build --env production
+    ```
+  </Step>
+
+  <Step title="Make it globally available">
+    Install your CLI globally for local testing:
+
+    ```bash
+    bun link
+    ```
+
+    Now you can use it anywhere:
+
+    ```bash
+    task build --env staging
+    task clean --force
+    ```
+  </Step>
+</Steps>
+
+## Testing Your CLI
+
+Add tests using Bun's built-in test runner:
+
+```typescript src/commands/build.test.ts
+import { describe, expect, test } from 'bun:test'
+import buildCommand from './build.js'
+
+describe('build command', () => {
+  test('has correct name and description', () => {
+    expect(buildCommand.name).toBe('build')
+    expect(buildCommand.description).toBe('Build project with validation and transformation')
+  })
+
+  test('defines required options', () => {
+    expect(buildCommand.options).toHaveProperty('env')
+    expect(buildCommand.options).toHaveProperty('outdir')
+    expect(buildCommand.options).toHaveProperty('watch')
+  })
+})
+```
+
+Run tests:
+
+```bash
+bun test
+```
+
+<Tip>
+  Check out the [@bunli/test](/packages/test) package for advanced CLI testing utilities.
+</Tip>
+
+## Project Structure Summary
+
+Your complete project structure:
+
+```
+task-cli/
+├── src/
+│   ├── index.ts              # CLI entry point
+│   └── commands/
+│       ├── build.ts          # Build command
+│       ├── clean.ts          # Clean command
+│       └── build.test.ts     # Tests
+├── dist/                     # Built output (generated)
+├── package.json              # Project metadata
+├── tsconfig.json             # TypeScript config
+├── bunli.config.ts           # Bunli configuration
+└── README.md                 # Documentation
+```
+
+## Next Steps
+
+You've built a working CLI from scratch! Here's what to explore next:
+
+<CardGroup cols={2}>
+  <Card title="Core Concepts" icon="book" href="/core-concepts/commands">
+    Dive deeper into commands, options, and handlers
+  </Card>
+  <Card title="Plugins" icon="plug" href="/guides/plugins">
+    Extend your CLI with plugins for config, completions, and more
+  </Card>
+  <Card title="Type Generation" icon="wand-magic-sparkles" href="/guides/type-generation">
+    Auto-generate TypeScript types for your commands
+  </Card>
+  <Card title="TUI Components" icon="terminal" href="/packages/tui">
+    Build interactive terminal interfaces with React
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Help Command
+
+Bunli automatically generates help output:
+
+```bash
+task --help
+task build --help
+```
+
+### Version Flag
+
+Version is automatically handled:
+
+```bash
+task --version
+```
+
+### Exit Codes
+
+Handle errors with proper exit codes:
+
+```typescript
+handler: async ({ flags }) => {
+  try {
+    // Your logic here
+  } catch (error) {
+    console.error('Failed:', error)
+    process.exit(1)
+  }
+}
+```
+
+### Environment Variables
+
+Access environment variables in handlers:
+
+```typescript
+handler: async ({ flags }) => {
+  const apiKey = process.env.API_KEY
+  if (!apiKey) {
+    throw new Error('API_KEY environment variable is required')
+  }
+  // Use the API key
+}
+```
+
+## Tips and Best Practices
+
+<Note>
+  **Always use `.js` extensions** in imports, even in TypeScript files. This is required for ES modules:
+  ```typescript
+  import command from './commands/build.js' // Correct
+  import command from './commands/build'    // Wrong
+  ```
+</Note>
+
+<Tip>
+  **Use short flags** for frequently used options. They make your CLI more user-friendly:
+  ```typescript
+  option(schema, { short: 'e', description: '...' })
+  ```
+</Tip>
+
+<Tip>
+  **Provide sensible defaults** to reduce required configuration:
+  ```typescript
+  z.string().default('dist')
+  ```
+</Tip>
+
+<Warning>
+  **Validate early** using Zod schemas. This catches errors before your handler runs and provides clear error messages to users.
+</Warning>
+
+You now have a solid foundation for building powerful CLIs with Bunli. Happy coding!

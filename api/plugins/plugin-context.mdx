@@ -1,0 +1,555 @@
+---
+title: Plugin Context
+description: Context objects and APIs available during plugin lifecycle hooks
+---
+
+## Overview
+
+Bunli provides two context objects to plugins:
+- **PluginContext**: Available during the `setup` hook
+- **CommandContext**: Available during `beforeCommand` and `afterCommand` hooks
+
+Both contexts provide type-safe access to configuration, stores, and framework APIs.
+
+## PluginContext
+
+Context available during the `setup` lifecycle hook. Used for configuration and command registration.
+
+### Interface
+
+```typescript
+interface PluginContext {
+  readonly config: BunliConfigInput
+  updateConfig(partial: Partial<BunliConfigInput>): void
+  registerCommand(command: CommandDefinition): void
+  use(middleware: Middleware): void
+  readonly store: Map<string, unknown>
+  readonly logger: Logger
+  readonly paths: PathInfo
+}
+```
+
+### Properties
+
+<ResponseField name="config" type="BunliConfigInput" required>
+  Current configuration being built. Read-only during setup.
+</ResponseField>
+
+<ResponseField name="store" type="Map<string, unknown>" required>
+  Shared key-value store for cross-plugin communication. Use plugin name as key prefix to avoid collisions.
+</ResponseField>
+
+<ResponseField name="logger" type="Logger" required>
+  Logger instance scoped to the plugin system.
+  
+  Methods:
+  - `debug(message: string)`: Debug-level logging
+  - `info(message: string)`: Info-level logging
+  - `warn(message: string)`: Warning-level logging
+  - `error(message: string)`: Error-level logging
+</ResponseField>
+
+<ResponseField name="paths" type="PathInfo" required>
+  System path information:
+  ```typescript
+  {
+    cwd: string      // Current working directory
+    home: string     // User home directory  
+    config: string   // Config directory path
+  }
+  ```
+</ResponseField>
+
+### Methods
+
+#### updateConfig
+
+Merge partial configuration into the CLI config:
+
+```typescript
+updateConfig(partial: Partial<BunliConfigInput>): void
+```
+
+<ParamField path="partial" type="Partial<BunliConfigInput>" required>
+  Configuration updates to merge. Uses deep merge strategy.
+</ParamField>
+
+**Example:**
+
+```typescript
+setup(context) {
+  context.updateConfig({
+    version: '2.0.0',
+    description: 'Updated by plugin'
+  })
+}
+```
+
+#### registerCommand
+
+Register a new command programmatically:
+
+```typescript
+registerCommand(command: CommandDefinition): void
+```
+
+<ParamField path="command" type="CommandDefinition" required>
+  Command object created with `defineCommand`
+</ParamField>
+
+**Example:**
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+
+setup(context) {
+  const helpCommand = defineCommand({
+    name: 'help',
+    description: 'Show help information',
+    options: {
+      verbose: option.boolean({
+        description: 'Show detailed help'
+      })
+    },
+    handler: async ({ options }) => {
+      if (options.verbose) {
+        // Show detailed help
+      }
+    }
+  })
+  
+  context.registerCommand(helpCommand)
+}
+```
+
+#### use
+
+Register global middleware that runs for all commands:
+
+```typescript
+use(middleware: Middleware): void
+```
+
+<ParamField path="middleware" type="Middleware" required>
+  Middleware function with signature:
+  ```typescript
+  (context: CommandContext, next: () => Promise<unknown>) => Promise<unknown>
+  ```
+</ParamField>
+
+**Example:**
+
+```typescript
+setup(context) {
+  // Timing middleware
+  context.use(async (ctx, next) => {
+    const start = Date.now()
+    await next()
+    const duration = Date.now() - start
+    context.logger.info(`Command took ${duration}ms`)
+  })
+  
+  // Auth middleware
+  context.use(async (ctx, next) => {
+    if (!ctx.store.auth?.token) {
+      throw new Error('Not authenticated')
+    }
+    await next()
+  })
+}
+```
+
+### Usage Example
+
+Real-world plugin using PluginContext:
+
+```typescript
+import { createPlugin } from '@bunli/core/plugin'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
+
+interface ConfigOptions {
+  sources: string[]
+}
+
+export const configPlugin = createPlugin<ConfigOptions, {}>(options => ({
+  name: 'config-loader',
+  
+  async setup(context) {
+    // Use logger
+    context.logger.debug('Loading configuration files')
+    
+    // Access paths
+    const configDir = context.paths.config
+    const configs = []
+    
+    // Load config files
+    for (const source of options.sources) {
+      const path = join(configDir, source)
+      try {
+        const content = await readFile(path, 'utf-8')
+        configs.push(JSON.parse(content))
+        context.logger.info(`Loaded config: ${path}`)
+      } catch (error) {
+        context.logger.warn(`Failed to load ${path}`)
+      }
+    }
+    
+    // Update config
+    if (configs.length > 0) {
+      const merged = Object.assign({}, ...configs)
+      context.updateConfig(merged)
+    }
+    
+    // Store data for other plugins
+    context.store.set('config-loader:loaded', configs.length)
+    
+    // Register middleware
+    context.use(async (ctx, next) => {
+      ctx.logger.debug(`Running command: ${ctx.command}`)
+      await next()
+    })
+  }
+}))
+```
+
+## CommandContext
+
+Context available during `beforeCommand` and `afterCommand` lifecycle hooks. Provides access to command execution state and the plugin store.
+
+### Interface
+
+```typescript
+interface CommandContext<TStore = {}> {
+  readonly command: string
+  readonly commandDef: Command<any, TStore>
+  readonly args: string[]
+  readonly flags: Record<string, unknown>
+  readonly env: EnvironmentInfo
+  readonly store: TStore
+  
+  getStoreValue<K extends keyof TStore>(key: K): TStore[K]
+  getStoreValue(key: string | number | symbol): unknown
+  
+  setStoreValue<K extends keyof TStore>(key: K, value: TStore[K]): void
+  setStoreValue(key: string | number | symbol, value: unknown): void
+  
+  hasStoreValue<K extends keyof TStore>(key: K): boolean
+  hasStoreValue(key: string | number | symbol): boolean
+}
+```
+
+### Properties
+
+<ResponseField name="command" type="string" required>
+  Name of the command being executed
+</ResponseField>
+
+<ResponseField name="commandDef" type="Command<any, TStore>" required>
+  The Command object being executed. Contains command metadata and handler.
+</ResponseField>
+
+<ResponseField name="args" type="string[]" required>
+  Positional arguments passed to the command
+</ResponseField>
+
+<ResponseField name="flags" type="Record<string, unknown>" required>
+  Parsed command-line flags/options with values
+</ResponseField>
+
+<ResponseField name="env" type="EnvironmentInfo" required>
+  Environment information:
+  ```typescript
+  {
+    isCI: boolean  // Detects CI environments
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="store" type="TStore" required>
+  Type-safe plugin store. Contains merged stores from all plugins.
+</ResponseField>
+
+### Methods
+
+#### getStoreValue
+
+Type-safe retrieval of store values:
+
+```typescript
+getStoreValue<K extends keyof TStore>(key: K): TStore[K]
+getStoreValue(key: string | number | symbol): unknown
+```
+
+<ParamField path="key" type="keyof TStore | string | number | symbol" required>
+  Store property key to retrieve
+</ParamField>
+
+<ResponseField name="return" type="TStore[K] | unknown">
+  Value stored at the given key
+</ResponseField>
+
+**Example:**
+
+```typescript
+interface MyStore {
+  count: number
+  message: string
+}
+
+beforeCommand(context: CommandContext<MyStore>) {
+  // Type-safe access
+  const count = context.getStoreValue('count') // Type: number
+  const message = context.getStoreValue('message') // Type: string
+  
+  // Dynamic access
+  const dynamic = context.getStoreValue('unknownKey') // Type: unknown
+}
+```
+
+#### setStoreValue
+
+Type-safe mutation of store values:
+
+```typescript
+setStoreValue<K extends keyof TStore>(key: K, value: TStore[K]): void
+setStoreValue(key: string | number | symbol, value: unknown): void
+```
+
+<ParamField path="key" type="keyof TStore | string | number | symbol" required>
+  Store property key to set
+</ParamField>
+
+<ParamField path="value" type="TStore[K] | unknown" required>
+  Value to store
+</ParamField>
+
+**Example:**
+
+```typescript
+interface MyStore {
+  count: number
+  lastCommand: string
+}
+
+beforeCommand(context: CommandContext<MyStore>) {
+  // Type-safe updates
+  context.setStoreValue('count', 42)
+  context.setStoreValue('lastCommand', context.command)
+  
+  // TypeScript error: Type 'string' is not assignable to 'number'
+  // context.setStoreValue('count', 'invalid')
+}
+```
+
+#### hasStoreValue
+
+Check if a store property exists:
+
+```typescript
+hasStoreValue<K extends keyof TStore>(key: K): boolean
+hasStoreValue(key: string | number | symbol): boolean
+```
+
+<ParamField path="key" type="keyof TStore | string | number | symbol" required>
+  Store property key to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if the property exists in the store
+</ResponseField>
+
+**Example:**
+
+```typescript
+beforeCommand(context) {
+  if (context.hasStoreValue('initialized')) {
+    console.log('Already initialized')
+  } else {
+    context.setStoreValue('initialized', true)
+  }
+}
+```
+
+### Usage Examples
+
+#### BeforeCommand Hook
+
+Validate and prepare state before command execution:
+
+```typescript
+interface MetricsStore {
+  commandCount: number
+  lastCommand: string
+  startTime: number
+}
+
+const metricsPlugin = createPlugin<{}, MetricsStore>(options => ({
+  name: 'metrics',
+  store: {
+    commandCount: 0,
+    lastCommand: '',
+    startTime: 0
+  },
+  
+  beforeCommand(context) {
+    // Track metrics
+    context.store.commandCount++
+    context.store.lastCommand = context.command
+    context.store.startTime = Date.now()
+    
+    // Log command details
+    console.log(`Executing: ${context.command}`)
+    console.log(`Arguments: ${context.args.join(', ')}`)
+    console.log(`Flags:`, context.flags)
+    console.log(`Total commands: ${context.store.commandCount}`)
+    
+    // CI-specific behavior
+    if (context.env.isCI) {
+      console.log('Running in CI environment')
+    }
+  }
+}))
+```
+
+#### AfterCommand Hook
+
+Handle results and cleanup after command execution:
+
+```typescript
+interface LogStore {
+  logs: Array<{ command: string; duration: number; success: boolean }>
+  startTime: number
+}
+
+const loggingPlugin = createPlugin<{}, LogStore>(options => ({
+  name: 'logging',
+  store: {
+    logs: [],
+    startTime: 0
+  },
+  
+  beforeCommand(context) {
+    context.store.startTime = Date.now()
+  },
+  
+  afterCommand(context) {
+    // Calculate duration
+    const duration = Date.now() - context.store.startTime
+    
+    // Check if command succeeded
+    const success = !context.error && context.exitCode === 0
+    
+    // Store log entry
+    context.store.logs.push({
+      command: context.command,
+      duration,
+      success
+    })
+    
+    // Log results
+    if (context.error) {
+      console.error(`Command failed: ${context.error}`)
+    } else {
+      console.log(`Command completed in ${duration}ms`)
+      console.log(`Result:`, context.result)
+    }
+    
+    // Write logs to file
+    if (context.env.isCI) {
+      writeFileSync('command-logs.json', JSON.stringify(context.store.logs, null, 2))
+    }
+  }
+}))
+```
+
+#### Store Interaction
+
+Complex store operations with type safety:
+
+```typescript
+interface CacheStore {
+  cache: Map<string, unknown>
+  hits: number
+  misses: number
+}
+
+const cachePlugin = createPlugin<{}, CacheStore>(options => ({
+  name: 'cache',
+  store: {
+    cache: new Map(),
+    hits: 0,
+    misses: 0
+  },
+  
+  beforeCommand(context) {
+    const cacheKey = `${context.command}:${JSON.stringify(context.flags)}`
+    
+    // Check cache
+    if (context.store.cache.has(cacheKey)) {
+      context.store.hits++
+      const cached = context.store.cache.get(cacheKey)
+      console.log('Cache hit! Using cached result:', cached)
+      // Could skip command execution here
+    } else {
+      context.store.misses++
+    }
+  },
+  
+  afterCommand(context) {
+    // Cache successful results
+    if (!context.error && context.result !== undefined) {
+      const cacheKey = `${context.command}:${JSON.stringify(context.flags)}`
+      context.store.cache.set(cacheKey, context.result)
+    }
+    
+    // Log cache stats
+    const total = context.store.hits + context.store.misses
+    const hitRate = (context.store.hits / total * 100).toFixed(2)
+    console.log(`Cache hit rate: ${hitRate}%`)
+  }
+}))
+```
+
+## Environment Detection
+
+The `createEnvironmentInfo` function detects various CI environments:
+
+```typescript
+function createEnvironmentInfo(): EnvironmentInfo
+```
+
+Detects:
+- Generic CI (`CI=true`)
+- GitHub Actions (`GITHUB_ACTIONS=true`)
+- GitLab CI (`GITLAB_CI=true`)
+- CircleCI (`CIRCLECI=true`)
+- Jenkins (`JENKINS_URL` set)
+- Continuous Integration flag (`CONTINUOUS_INTEGRATION=true`)
+
+**Example:**
+
+```typescript
+import { createEnvironmentInfo } from '@bunli/core/plugin'
+
+const env = createEnvironmentInfo()
+if (env.isCI) {
+  console.log('Running in CI')
+}
+```
+
+## Best Practices
+
+1. **Type your store**: Always use the `TStore` generic for type-safe store access
+2. **Use getters/setters**: Prefer `getStoreValue`/`setStoreValue` for dynamic keys
+3. **Namespace store keys**: Use plugin name as prefix to avoid collisions in shared store
+4. **Log appropriately**: Use correct log levels (debug/info/warn/error)
+5. **Handle errors**: Wrap async operations in try-catch blocks
+6. **CI detection**: Use `context.env.isCI` for CI-specific behavior
+7. **Immutable context**: Don't modify readonly properties
+
+## Related
+
+- [createPlugin](/api/plugins/create-plugin)
+- [Plugin Types](/api/plugins/plugin-types)
+- [Command Definition](/api/commands/define-command)

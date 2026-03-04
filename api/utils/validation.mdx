@@ -1,0 +1,256 @@
+---
+title: 'Validation'
+description: 'Runtime validation utilities for Bunli commands'
+---
+
+## Overview
+
+Bunli provides runtime validation utilities that work with Standard Schema v1 compatible schemas (like Zod). These functions validate command options, provide helpful error messages, and support custom validation logic.
+
+## Core Functions
+
+### `validateValue`
+
+Validate a single value against a schema at runtime.
+
+```typescript
+export async function validateValue(
+  value: unknown,
+  schema: StandardSchemaV1,
+  context: {
+    option: string
+    command: string
+  }
+): Promise<unknown>
+```
+
+**Parameters:**
+- `value`: The value to validate
+- `schema`: A Standard Schema v1 compatible schema (e.g., Zod schema)
+- `context.option`: The name of the option being validated
+- `context.command`: The command name for error context
+
+**Returns:** The validated and transformed value
+
+**Throws:** `BunliValidationError` if validation fails
+
+**Example:**
+
+```typescript
+import { validateValue } from '@bunli/core'
+import { z } from 'zod'
+
+const schema = z.string().min(3)
+
+try {
+  const result = await validateValue(
+    'ab',
+    schema,
+    { option: 'name', command: 'greet' }
+  )
+} catch (error) {
+  // BunliValidationError with helpful message
+  console.error(error.message)
+}
+```
+
+### `validateValues`
+
+Validate multiple values against their schemas in batch.
+
+```typescript
+export async function validateValues(
+  values: Record<string, unknown>,
+  schemas: Record<string, StandardSchemaV1>,
+  command: string
+): Promise<Record<string, unknown>>
+```
+
+**Parameters:**
+- `values`: Object mapping option names to values
+- `schemas`: Object mapping option names to schemas
+- `command`: The command name for error context
+
+**Returns:** Object with validated and transformed values
+
+**Throws:** `Error` with all validation errors concatenated
+
+**Example:**
+
+```typescript
+import { validateValues } from '@bunli/core'
+import { z } from 'zod'
+
+const values = {
+  name: 'Alice',
+  age: '25',
+  email: 'alice@example.com'
+}
+
+const schemas = {
+  name: z.string().min(2),
+  age: z.coerce.number().int().positive(),
+  email: z.string().email()
+}
+
+try {
+  const validated = await validateValues(values, schemas, 'user-create')
+  // { name: 'Alice', age: 25, email: 'alice@example.com' }
+} catch (error) {
+  console.error(error.message)
+}
+```
+
+### `isValueOfType`
+
+Check if a value matches a schema type without throwing errors.
+
+```typescript
+export function isValueOfType(
+  value: unknown,
+  expectedType: string
+): boolean
+```
+
+**Parameters:**
+- `value`: The value to check
+- `expectedType`: One of: `'string'`, `'number'`, `'boolean'`, `'array'`, `'object'`
+
+**Returns:** `true` if the value matches the type
+
+**Example:**
+
+```typescript
+import { isValueOfType } from '@bunli/core'
+
+isValueOfType('hello', 'string')  // true
+isValueOfType(42, 'number')      // true
+isValueOfType([1, 2], 'array')   // true
+isValueOfType({}, 'object')      // true
+isValueOfType(null, 'object')    // false
+```
+
+## Validator Factories
+
+### `createValidator`
+
+Create a reusable validator function from a schema.
+
+```typescript
+export function createValidator(
+  schema: StandardSchemaV1
+): (value: unknown, context: { option: string; command: string }) => Promise<unknown>
+```
+
+**Example:**
+
+```typescript
+import { createValidator } from '@bunli/core'
+import { z } from 'zod'
+
+const portValidator = createValidator(
+  z.coerce.number().int().min(1000).max(65535)
+)
+
+// Use the validator
+const port = await portValidator('3000', {
+  option: 'port',
+  command: 'start'
+})
+// Result: 3000 (as number)
+```
+
+### `createBatchValidator`
+
+Create a reusable batch validator for multiple options.
+
+```typescript
+export function createBatchValidator(
+  schemas: Record<string, StandardSchemaV1>
+): (values: Record<string, unknown>, command: string) => Promise<Record<string, unknown>>
+```
+
+**Example:**
+
+```typescript
+import { createBatchValidator } from '@bunli/core'
+import { z } from 'zod'
+
+const serverValidator = createBatchValidator({
+  host: z.string().default('localhost'),
+  port: z.coerce.number().int().min(1000).max(65535),
+  ssl: z.coerce.boolean().default(false)
+})
+
+// Use the validator
+const config = await serverValidator(
+  { host: '0.0.0.0', port: '8080', ssl: 'true' },
+  'start'
+)
+// Result: { host: '0.0.0.0', port: 8080, ssl: true }
+```
+
+## Error Types
+
+### `BunliValidationError`
+
+Thrown when validation fails. Contains detailed context about the failure.
+
+**Properties:**
+- `message`: Human-readable error message
+- `option`: The option name that failed validation
+- `value`: The invalid value
+- `command`: The command name
+- `expectedType`: The expected type (e.g., 'string', 'number')
+- `hint`: Helpful hint for fixing the error
+
+**Example:**
+
+```typescript
+try {
+  await validateValue(
+    'not-a-number',
+    z.coerce.number(),
+    { option: 'port', command: 'start' }
+  )
+} catch (error) {
+  if (error instanceof BunliValidationError) {
+    console.error(error.message)     // "Invalid option 'port': ..."
+    console.error(error.option)      // "port"
+    console.error(error.expectedType) // "number"
+    console.error(error.hint)        // "Provide a numeric value"
+  }
+}
+```
+
+## Usage in Commands
+
+Bunli automatically validates command options using these utilities. You typically don't need to call them directly:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+const myCommand = defineCommand({
+  name: 'greet',
+  options: {
+    // Automatic validation happens here
+    name: option(z.string().min(2), {
+      description: 'Name to greet'
+    }),
+    times: option(z.coerce.number().int().positive(), {
+      description: 'Times to repeat'
+    })
+  },
+  handler: async ({ flags }) => {
+    // flags.name and flags.times are already validated
+    console.log(`Hello ${flags.name}!`.repeat(flags.times))
+  }
+})
+```
+
+## See Also
+
+- [Error Handling](/api/utils/errors) - Error classes and patterns
+- [Option API](/api/option) - Define command options
+- [Command API](/api/command) - Define commands

@@ -1,0 +1,311 @@
+---
+title: Quick Start
+description: Create your first Bunli CLI in under 2 minutes
+icon: rocket
+---
+
+## Create Your First CLI
+
+The fastest way to get started with Bunli is using `create-bunli`, the official scaffolding tool.
+
+<Steps>
+  <Step title="Create a new project">
+    Run the following command to create a new CLI project:
+
+    ```bash
+    bunx create-bunli my-cli
+    ```
+
+    You'll be prompted to choose a template:
+    
+    ```
+    ✔ Select a template
+    ❯ basic     - Minimal CLI with one command
+      advanced  - CLI with multiple commands and features  
+      monorepo  - Multi-package Turborepo setup
+    ```
+
+    <Note>
+      Choose **basic** for this quickstart. You can explore other templates later.
+    </Note>
+
+    The tool will create a new directory with your project and install dependencies automatically.
+  </Step>
+
+  <Step title="Navigate to your project">
+    Change into your new project directory:
+
+    ```bash
+    cd my-cli
+    ```
+
+    Your project structure looks like this:
+
+    ```
+    my-cli/
+    ├── src/
+    │   ├── index.ts              # CLI entry point
+    │   └── commands/
+    │       └── hello.ts          # Example command
+    ├── package.json              # Project metadata
+    ├── tsconfig.json             # TypeScript config
+    ├── bunli.config.ts           # Bunli configuration
+    └── README.md                 # Documentation
+    ```
+  </Step>
+
+  <Step title="Run in development mode">
+    Start your CLI in development mode with hot reload:
+
+    ```bash
+    bun run dev hello --name "World"
+    ```
+
+    You should see:
+
+    ```
+    Hello, World.
+    ```
+
+    <Tip>
+      Development mode automatically reloads when you change files. No need to restart!
+    </Tip>
+  </Step>
+
+  <Step title="Try different options">
+    The example command includes options you can experiment with:
+
+    ```bash
+    # Try the excited flag
+    bun run dev hello --name "Bunli" --excited
+    ```
+
+    Output:
+    ```
+    Hello, Bunli!
+    ```
+
+    ```bash
+    # Use short flags
+    bun run dev hello -n "Developer" -e
+    ```
+
+    Output:
+    ```
+    Hello, Developer!
+    ```
+  </Step>
+</Steps>
+
+## Understanding Your First Command
+
+Let's examine the command that was generated in `src/commands/hello.ts`:
+
+```typescript src/commands/hello.ts
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+const helloCommand = defineCommand({
+  name: 'hello',
+  description: 'Say hello to someone',
+  options: {
+    name: option(
+      z.string().default('World'),
+      { 
+        description: 'Name to greet',
+        short: 'n'
+      }
+    ),
+    excited: option(
+      z.boolean().default(false),
+      {
+        description: 'Add excitement!',
+        short: 'e'
+      }
+    )
+  },
+  handler: async ({ flags, colors }) => {
+    const greeting = `Hello, ${flags.name}`
+    const message = flags.excited ? `${greeting}!` : `${greeting}.`
+    
+    console.log(colors.green(message))
+  }
+})
+
+export default helloCommand
+```
+
+### Key Concepts
+
+- **`defineCommand`**: Creates a type-safe command definition
+- **`option()`**: Defines command options with Zod validation
+- **Zod schemas**: Provide runtime validation and type inference
+- **Short flags**: Single-letter aliases for options (e.g., `-n` for `--name`)
+- **Handler context**: Access to `flags`, `colors`, `spinner`, and more
+
+## Build Your CLI
+
+Compile your CLI to a standalone binary:
+
+<Steps>
+  <Step title="Run the build command">
+    ```bash
+    bun run build
+    ```
+
+    Expected output:
+    ```
+    Building CLI...
+    ✓ Compiled successfully
+    ✓ Generated binary: ./dist/index.js
+    ```
+  </Step>
+
+  <Step title="Run the built CLI">
+    Execute your compiled CLI:
+
+    ```bash
+    ./dist/index.js hello --name "Production"
+    ```
+
+    Or if you've set up the bin field in package.json:
+
+    ```bash
+    node ./dist/index.js hello -n "Production" -e
+    ```
+  </Step>
+</Steps>
+
+## Test Your CLI
+
+Bunli includes testing utilities out of the box. Run tests with:
+
+```bash
+bun test
+```
+
+<Note>
+  The basic template doesn't include tests by default, but you can add them using `@bunli/test`. See the [Testing Guide](/guides/testing) for details.
+</Note>
+
+## Available Templates
+
+Beyond the basic template, `create-bunli` offers other starting points:
+
+<CardGroup cols={3}>
+  <Card title="Basic" icon="cube">
+    **Perfect for:** Simple CLIs with a single command
+    
+    **Includes:**
+    - One example command
+    - TypeScript configuration
+    - Basic build setup
+
+    ```bash
+    bunx create-bunli my-cli --template basic
+    ```
+  </Card>
+
+  <Card title="Advanced" icon="layer-group">
+    **Perfect for:** Complex CLIs with multiple commands
+    
+    **Includes:**
+    - Multiple commands
+    - Configuration management
+    - File validation system
+    - Development server example
+
+    ```bash
+    bunx create-bunli my-cli --template advanced
+    ```
+  </Card>
+
+  <Card title="Monorepo" icon="boxes-stacked">
+    **Perfect for:** Large projects with multiple packages
+    
+    **Includes:**
+    - Turborepo configuration
+    - Multiple packages setup
+    - Shared dependencies
+    - Parallel builds
+
+    ```bash
+    bunx create-bunli my-cli --template monorepo
+    ```
+  </Card>
+</CardGroup>
+
+## Common Commands
+
+Here are the essential commands you'll use regularly:
+
+| Command | Description |
+|---------|-------------|
+| `bun run dev` | Start development mode with hot reload |
+| `bun run build` | Compile CLI to production binary |
+| `bun test` | Run tests with Bun's test runner |
+| `bun run typecheck` | Check TypeScript types without building |
+| `bunli generate` | Generate TypeScript definitions from commands |
+
+## Using create-bunli Options
+
+`create-bunli` supports several options for customization:
+
+```bash
+# Create without installing dependencies
+bunx create-bunli my-cli --no-install
+
+# Create in a custom directory
+bunx create-bunli my-cli --dir ~/projects/my-cli
+
+# Use a specific template
+bunx create-bunli my-cli --template advanced
+
+# Create in the current directory
+bunx create-bunli .
+
+# Use an external GitHub template
+bunx create-bunli my-cli --template username/repo
+```
+
+<Tip>
+  You can use any GitHub repository as a template by providing the username/repo format.
+</Tip>
+
+## Customizing Your CLI
+
+Edit `src/index.ts` to customize your CLI metadata:
+
+```typescript src/index.ts
+import { createCLI } from '@bunli/core'
+import helloCommand from './commands/hello.js'
+
+const cli = await createCLI({
+  name: 'my-awesome-cli',
+  version: '1.0.0',
+  description: 'My awesome CLI tool'
+})
+
+cli.command(helloCommand)
+
+await cli.run()
+```
+
+## Next Steps
+
+Now that you have a working CLI, dive deeper:
+
+<CardGroup cols={2}>
+  <Card title="Build from Scratch" icon="hammer" href="/getting-started/your-first-cli">
+    Learn how to build a CLI from scratch without templates
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/core-concepts/commands">
+    Understand commands, options, and handlers in depth
+  </Card>
+  <Card title="Add Plugins" icon="plug" href="/guides/plugins">
+    Extend your CLI with the powerful plugin system
+  </Card>
+  <Card title="Type Generation" icon="wand-magic-sparkles" href="/guides/type-generation">
+    Enable autocomplete and type-safe wrappers
+  </Card>
+</CardGroup>

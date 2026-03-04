@@ -1,0 +1,480 @@
+---
+title: Plugin Types
+description: TypeScript types and interfaces for the Bunli plugin system
+---
+
+## Overview
+
+Bunli's plugin system is fully typed with TypeScript. This page documents all plugin-related types, interfaces, and type utilities.
+
+## Core Types
+
+### BunliPlugin
+
+The main plugin interface with optional store type parameter:
+
+```typescript
+interface BunliPlugin<TStore = {}> {
+  /** Unique plugin name */
+  name: string
+  
+  /** Optional plugin version */
+  version?: string
+  
+  /** Plugin store schema/initial state */
+  store?: TStore
+  
+  /** Setup hook - Called during CLI initialization */
+  setup?(context: PluginContext): void | Promise<void>
+  
+  /** Config resolved hook - Called after all configuration is finalized */
+  configResolved?(config: ResolvedConfig): void | Promise<void>
+  
+  /** Before command hook - Called before command execution */
+  beforeCommand?(context: CommandContext<any>): void | Promise<void>
+  
+  /** After command hook - Called after command execution */
+  afterCommand?(context: CommandContext<any> & CommandResult): void | Promise<void>
+}
+```
+
+<ParamField path="TStore" type="generic" default="{}">
+  Store type parameter for type-safe store access
+</ParamField>
+
+<ResponseField name="name" type="string" required>
+  Unique identifier for the plugin. Use namespaced names like `@scope/plugin-name`
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  Plugin version, typically following semver
+</ResponseField>
+
+<ResponseField name="store" type="TStore">
+  Initial store state. Store is merged across all plugins.
+</ResponseField>
+
+<ResponseField name="setup" type="(context: PluginContext) => void | Promise<void>">
+  Lifecycle hook called during CLI initialization. Can modify config and register commands.
+</ResponseField>
+
+<ResponseField name="configResolved" type="(config: ResolvedConfig) => void | Promise<void>">
+  Lifecycle hook called after configuration is finalized. Config is immutable at this point.
+</ResponseField>
+
+<ResponseField name="beforeCommand" type="(context: CommandContext) => void | Promise<void>">
+  Lifecycle hook called before command execution. Can inject context and validate.
+</ResponseField>
+
+<ResponseField name="afterCommand" type="(context: CommandContext & CommandResult) => void | Promise<void>">
+  Lifecycle hook called after command execution. Receives command result or error.
+</ResponseField>
+
+### PluginFactory
+
+Type for plugin factory functions that accept configuration:
+
+```typescript
+type PluginFactory<TOptions = unknown, TStore = {}> = 
+  (options?: TOptions) => BunliPlugin<TStore>
+```
+
+<ParamField path="TOptions" type="generic" default="unknown">
+  Type of options the factory accepts
+</ParamField>
+
+<ParamField path="TStore" type="generic" default="{}">
+  Type of the plugin's store
+</ParamField>
+
+**Example:**
+
+```typescript
+interface MyPluginOptions {
+  enabled: boolean
+  threshold: number
+}
+
+interface MyPluginStore {
+  count: number
+}
+
+const myPlugin: PluginFactory<MyPluginOptions, MyPluginStore> = (options) => ({
+  name: 'my-plugin',
+  store: { count: 0 },
+  beforeCommand(context) {
+    if (options.enabled) {
+      context.store.count++
+    }
+  }
+})
+```
+
+### PluginConfig
+
+Union type for different ways to configure plugins:
+
+```typescript
+type PluginConfig = 
+  | string                    // Path to plugin module
+  | BunliPlugin              // Plugin object
+  | PluginFactory            // Plugin factory function
+  | [PluginFactory, unknown] // Plugin factory with options tuple
+```
+
+**Example:**
+
+```typescript
+export default {
+  plugins: [
+    // String path
+    './plugins/my-plugin.ts',
+    
+    // Plugin object
+    { name: 'inline-plugin', setup: () => {} },
+    
+    // Factory without options
+    myPlugin,
+    
+    // Factory with options
+    myPlugin({ enabled: true, threshold: 10 }),
+    
+    // Tuple syntax
+    [myPlugin, { enabled: true }]
+  ]
+}
+```
+
+## Store Types
+
+### StoreOf
+
+Extract the store type from a plugin:
+
+```typescript
+type StoreOf<P> = P extends BunliPlugin<infer S> ? S : {}
+```
+
+**Example:**
+
+```typescript
+const myPlugin = createPlugin<{ count: number }>({
+  name: 'my-plugin',
+  store: { count: 0 }
+})
+
+type MyStore = StoreOf<typeof myPlugin>
+// Result: { count: number }
+```
+
+### MergeStores
+
+Merge multiple plugin stores into one type:
+
+```typescript
+type MergeStores<Plugins extends readonly BunliPlugin[]> = 
+  Plugins extends readonly []
+    ? {}
+    : Plugins extends readonly [infer First, ...infer Rest]
+      ? First extends BunliPlugin
+        ? Rest extends readonly BunliPlugin[]
+          ? StoreOf<First> & MergeStores<Rest>
+          : StoreOf<First>
+        : {}
+      : {}
+```
+
+**Example:**
+
+```typescript
+const plugin1 = createPlugin<{ count: number }>({
+  name: 'plugin1',
+  store: { count: 0 }
+})
+
+const plugin2 = createPlugin<{ message: string }>({
+  name: 'plugin2',
+  store: { message: '' }
+})
+
+type Combined = MergeStores<[typeof plugin1, typeof plugin2]>
+// Result: { count: number; message: string }
+```
+
+## Context Types
+
+### PluginContext
+
+Context available during the `setup` hook:
+
+```typescript
+interface PluginContext {
+  /** Current configuration (being built) */
+  readonly config: BunliConfigInput
+  
+  /** Update configuration */
+  updateConfig(partial: Partial<BunliConfigInput>): void
+  
+  /** Register a new command */
+  registerCommand(command: CommandDefinition): void
+  
+  /** Add global middleware */
+  use(middleware: Middleware): void
+  
+  /** Shared storage between plugins */
+  readonly store: Map<string, unknown>
+  
+  /** Plugin logger */
+  readonly logger: Logger
+  
+  /** System paths */
+  readonly paths: PathInfo
+}
+```
+
+See [Plugin Context](/api/plugins/plugin-context) for detailed documentation.
+
+### CommandContext
+
+Context available during command execution hooks:
+
+```typescript
+interface CommandContext<TStore = {}> {
+  /** Command name being executed */
+  readonly command: string
+  
+  /** The Command object being executed */
+  readonly commandDef: Command<any, TStore>
+  
+  /** Positional arguments */
+  readonly args: string[]
+  
+  /** Parsed flags/options */
+  readonly flags: Record<string, unknown>
+  
+  /** Environment information */
+  readonly env: EnvironmentInfo
+  
+  /** Type-safe context store */
+  readonly store: TStore
+  
+  /** Type-safe store value access */
+  getStoreValue<K extends keyof TStore>(key: K): TStore[K]
+  getStoreValue(key: string | number | symbol): unknown
+  
+  /** Type-safe store value update */
+  setStoreValue<K extends keyof TStore>(key: K, value: TStore[K]): void
+  setStoreValue(key: string | number | symbol, value: unknown): void
+  
+  /** Check if a store property exists */
+  hasStoreValue<K extends keyof TStore>(key: K): boolean
+  hasStoreValue(key: string | number | symbol): boolean
+}
+```
+
+See [Plugin Context](/api/plugins/plugin-context) for detailed documentation.
+
+### CommandResult
+
+Result information passed to `afterCommand` hook:
+
+```typescript
+interface CommandResult {
+  /** Command return value */
+  result?: unknown
+  
+  /** Error if command failed */
+  error?: unknown
+  
+  /** Exit code */
+  exitCode?: number
+}
+```
+
+<ResponseField name="result" type="unknown">
+  The value returned by the command handler
+</ResponseField>
+
+<ResponseField name="error" type="unknown">
+  Error object if the command threw an exception
+</ResponseField>
+
+<ResponseField name="exitCode" type="number">
+  Process exit code (0 for success, non-zero for failure)
+</ResponseField>
+
+## Supporting Types
+
+### PathInfo
+
+System path information:
+
+```typescript
+interface PathInfo {
+  /** Current working directory */
+  cwd: string
+  
+  /** User home directory */
+  home: string
+  
+  /** Config directory path */
+  config: string
+}
+```
+
+### EnvironmentInfo
+
+Environment information:
+
+```typescript
+interface EnvironmentInfo {
+  /** Running in CI environment */
+  isCI: boolean
+}
+```
+
+Detects CI environments including:
+- GitHub Actions
+- GitLab CI
+- CircleCI
+- Jenkins
+- Generic CI (CI=true)
+
+### Middleware
+
+Middleware function type:
+
+```typescript
+type Middleware = (
+  context: CommandContext, 
+  next: () => Promise<unknown>
+) => Promise<unknown>
+```
+
+**Example:**
+
+```typescript
+const timingMiddleware: Middleware = async (context, next) => {
+  const start = Date.now()
+  await next()
+  const duration = Date.now() - start
+  console.log(`Command took ${duration}ms`)
+}
+
+// In plugin setup:
+setup(context) {
+  context.use(timingMiddleware)
+}
+```
+
+### CommandDefinition
+
+Type alias for command objects:
+
+```typescript
+type CommandDefinition = Command<any>
+```
+
+## Module Augmentation
+
+Plugins can extend global types using module augmentation:
+
+```typescript
+declare module '@bunli/core' {
+  interface PluginStore {
+    // Add your custom store properties
+    myPlugin: {
+      customData: string
+    }
+  }
+  
+  interface CommandContext {
+    // Add custom context methods
+    myCustomMethod(): void
+  }
+}
+```
+
+**Example:**
+
+```typescript
+// my-plugin.ts
+import type {} from '@bunli/core'
+
+declare module '@bunli/core' {
+  interface PluginStore {
+    auth: {
+      token: string | null
+      user: string | null
+    }
+  }
+}
+
+export const authPlugin = createPlugin<{ token: string }>(options => ({
+  name: 'auth-plugin',
+  store: {
+    auth: {
+      token: options.token,
+      user: null
+    }
+  },
+  beforeCommand(context) {
+    // TypeScript knows about auth property
+    if (!context.store.auth.token) {
+      throw new Error('Not authenticated')
+    }
+  }
+}))
+```
+
+## Type Utilities
+
+### InferPluginOptions
+
+Infer options type from a plugin factory:
+
+```typescript
+type InferPluginOptions<T> = T extends PluginFactory<infer O, any> ? O : never
+
+// Example
+const myPlugin = createPlugin((options: { enabled: boolean }) => ({
+  name: 'my-plugin'
+}))
+
+type Options = InferPluginOptions<typeof myPlugin>
+// Result: { enabled: boolean }
+```
+
+### InferPluginStore
+
+Infer store type from a plugin or plugin factory:
+
+```typescript
+type InferPluginStore<T> = 
+  T extends BunliPlugin<infer S> ? S 
+  : T extends PluginFactory<any, infer S> ? S 
+  : {}
+
+// Example
+const myPlugin = createPlugin<{}, { count: number }>(options => ({
+  name: 'my-plugin',
+  store: { count: 0 }
+}))
+
+type Store = InferPluginStore<ReturnType<typeof myPlugin>>
+// Result: { count: number }
+```
+
+## Best Practices
+
+1. **Always type your store**: Use the `TStore` generic parameter for type-safe store access
+2. **Use satisfies**: Add `satisfies BunliPlugin<TStore>` to catch type errors early
+3. **Avoid any**: Use proper generics instead of `any` in plugin definitions
+4. **Module augmentation**: Use sparingly and document well
+5. **Export types**: Export your plugin's option and store types for consumers
+
+## Related
+
+- [createPlugin](/api/plugins/create-plugin)
+- [Plugin Context](/api/plugins/plugin-context)
+- [TypeScript Handbook](https://www.typescriptlang.org/docs/handbook/intro.html)

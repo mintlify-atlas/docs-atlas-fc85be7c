@@ -1,0 +1,374 @@
+---
+title: AI Detection Plugin
+description: Detect AI coding assistants from environment variables
+---
+
+## Overview
+
+The `@bunli/plugin-ai-detect` plugin detects AI coding assistants by checking environment variables. This is useful for:
+
+- Adjusting CLI output for AI agents
+- Enabling machine-readable formats automatically
+- Tracking AI usage in telemetry
+- Customizing behavior based on the execution context
+
+## Installation
+
+```bash
+bun add @bunli/plugin-ai-detect
+```
+
+## Usage
+
+```typescript
+import { createCLI } from '@bunli/core'
+import { aiAgentPlugin } from '@bunli/plugin-ai-detect'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    aiAgentPlugin({ verbose: true })
+  ]
+})
+```
+
+## Detected Agents
+
+The plugin detects the following AI coding assistants:
+
+| Agent | Environment Variables |
+|-------|----------------------|
+| **Claude** | `CLAUDECODE`, `CLAUDE_CODE` |
+| **Cursor** | `CURSOR_AGENT` |
+| **Codex** | `CODEX_CI`, `CODEX_THREAD_ID`, `CODEX_SANDBOX` |
+| **Amp** | `AMP_CURRENT_THREAD_ID`, `AGENT=amp` |
+| **Gemini** | `GEMINI_CLI` |
+| **OpenCode** | `OPENCODE=1` |
+
+## Options
+
+```typescript
+interface AIDetectPluginOptions {
+  /**
+   * Additional custom AI agents to detect
+   */
+  customAgents?: AIAgentInfo[]
+  
+  /**
+   * Whether to log detection results
+   * Default: false
+   */
+  verbose?: boolean
+}
+
+interface AIAgentInfo {
+  name: string
+  envVars: string[]
+  detect: (env: NodeJS.ProcessEnv) => boolean
+}
+```
+
+## Custom Agents
+
+Add detection for custom AI agents:
+
+```typescript
+import { aiAgentPlugin } from '@bunli/plugin-ai-detect'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    aiAgentPlugin({
+      customAgents: [
+        {
+          name: 'custom-ai',
+          envVars: ['CUSTOM_AI_AGENT'],
+          detect: (env) => env.CUSTOM_AI_AGENT === 'true'
+        }
+      ]
+    })
+  ]
+})
+```
+
+## Environment Info Extension
+
+The plugin extends Bunli's environment info:
+
+```typescript
+// In command handlers
+export default defineCommand({
+  name: 'example',
+  handler: async ({ runtime }) => {
+    if (runtime.env.isAIAgent) {
+      console.log('Running with AI agent')
+      console.log('Detected agents:', runtime.env.aiAgents)
+      // Output: ['claude', 'cursor']
+    }
+  }
+})
+```
+
+### Extended Interface
+
+```typescript
+declare module '@bunli/core/plugin' {
+  interface EnvironmentInfo {
+    /** AI agent detected */
+    isAIAgent: boolean
+    
+    /** Detected AI agents */
+    aiAgents: string[]
+  }
+}
+```
+
+## Plugin Store
+
+The plugin maintains a typed store:
+
+```typescript
+interface AIDetectStore {
+  isAIAgent: boolean
+  aiAgents: string[]
+  aiAgentEnvVars: string[]
+}
+```
+
+Access in other plugins:
+
+```typescript
+const myPlugin = createPlugin({
+  name: 'my-plugin',
+  
+  beforeCommand(context) {
+    if (context.store.isAIAgent) {
+      console.log('AI agents:', context.store.aiAgents)
+      console.log('Env vars:', context.store.aiAgentEnvVars)
+    }
+  }
+})
+```
+
+## Real-World Examples
+
+### Adjust Output Format
+
+```typescript
+import { aiAgentPlugin } from '@bunli/plugin-ai-detect'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [aiAgentPlugin()]
+})
+
+export default defineCommand({
+  name: 'list',
+  handler: async ({ runtime }) => {
+    const items = ['item1', 'item2', 'item3']
+    
+    // Machine-readable format for AI agents
+    if (runtime.env.isAIAgent) {
+      console.log(JSON.stringify(items))
+    } else {
+      // Human-readable format
+      items.forEach((item, i) => {
+        console.log(`${i + 1}. ${item}`)
+      })
+    }
+  }
+})
+```
+
+### Telemetry Tracking
+
+```typescript
+const telemetryPlugin = createPlugin({
+  name: 'telemetry',
+  
+  beforeCommand(context) {
+    // Track AI agent usage
+    if (context.env.isAIAgent) {
+      trackEvent('ai_command_execution', {
+        command: context.command,
+        agents: context.env.aiAgents
+      })
+    }
+  }
+})
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    aiAgentPlugin(),
+    telemetryPlugin
+  ]
+})
+```
+
+### Disable Prompts
+
+```typescript
+import { aiAgentPlugin } from '@bunli/plugin-ai-detect'
+import { prompt } from '@bunli/utils'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [aiAgentPlugin()]
+})
+
+export default defineCommand({
+  name: 'deploy',
+  handler: async ({ runtime }) => {
+    // Skip prompts for AI agents
+    if (!runtime.env.isAIAgent) {
+      const confirmed = await prompt.confirm({
+        message: 'Deploy to production?'
+      })
+      
+      if (!confirmed) return
+    }
+    
+    // Proceed with deployment
+    console.log('Deploying...')
+  }
+})
+```
+
+### Verbose Logging
+
+```typescript
+const loggingPlugin = createPlugin({
+  name: 'logging',
+  
+  beforeCommand(context) {
+    // Enable verbose logging for AI agents
+    if (context.env.isAIAgent) {
+      process.env.DEBUG = '*'
+      console.log('AI Agent detected:', context.env.aiAgents.join(', '))
+    }
+  }
+})
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    aiAgentPlugin(),
+    loggingPlugin
+  ]
+})
+```
+
+## Source Code
+
+Full plugin implementation:
+
+```typescript packages/plugin-ai-detect/src/index.ts
+import type { BunliPlugin } from '@bunli/core/plugin'
+import { createPlugin } from '@bunli/core/plugin'
+
+// Known AI agents and their detection patterns
+const AI_AGENTS = [
+  {
+    name: 'claude',
+    envVars: ['CLAUDECODE', 'CLAUDE_CODE'],
+    detect: (env) => !!env.CLAUDECODE || !!env.CLAUDE_CODE
+  },
+  {
+    name: 'cursor',
+    envVars: ['CURSOR_AGENT'],
+    detect: (env) => !!env.CURSOR_AGENT
+  },
+  {
+    name: 'codex',
+    envVars: ['CODEX_CI', 'CODEX_THREAD_ID', 'CODEX_SANDBOX'],
+    detect: (env) => !!env.CODEX_CI || !!env.CODEX_THREAD_ID || !!env.CODEX_SANDBOX
+  },
+  {
+    name: 'amp',
+    envVars: ['AMP_CURRENT_THREAD_ID', 'AGENT'],
+    detect: (env) => !!env.AMP_CURRENT_THREAD_ID || env.AGENT === 'amp'
+  },
+  {
+    name: 'gemini',
+    envVars: ['GEMINI_CLI'],
+    detect: (env) => !!env.GEMINI_CLI
+  },
+  {
+    name: 'opencode',
+    envVars: ['OPENCODE'],
+    detect: (env) => env.OPENCODE === '1'
+  },
+]
+
+export const aiAgentPlugin = createPlugin<AIDetectPluginOptions, AIDetectStore>(
+  (options = {}) => {
+    const agents = [...AI_AGENTS, ...(options.customAgents || [])]
+    
+    return {
+      name: '@bunli/plugin-ai-detect',
+      version: '1.0.0',
+      
+      store: {
+        isAIAgent: false,
+        aiAgents: [],
+        aiAgentEnvVars: []
+      },
+      
+      beforeCommand(context) {
+        const env = process.env
+        const detectedAgents: string[] = []
+        const allDetectedEnvVars: string[] = []
+        
+        // Initialize AI fields on the environment info
+        context.env.isAIAgent = false
+        context.env.aiAgents = []
+        
+        // Check all known AI agents
+        for (const agent of agents) {
+          if (agent.detect(env)) {
+            detectedAgents.push(agent.name)
+            
+            // Store detected environment variables
+            const detectedVars = agent.envVars.filter(v => !!env[v])
+            allDetectedEnvVars.push(...detectedVars)
+            
+            if (options.verbose) {
+              console.log(`🤖 AI agent detected: ${agent.name}`)
+            }
+          }
+        }
+        
+        // Update context based on detection results
+        if (detectedAgents.length > 0) {
+          context.env.isAIAgent = true
+          context.env.aiAgents = detectedAgents
+          
+          if (context.store) {
+            context.store.isAIAgent = true
+            context.store.aiAgents = detectedAgents
+            context.store.aiAgentEnvVars = allDetectedEnvVars
+          }
+        }
+      }
+    }
+  }
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Shell Completions" icon="terminal" href="/plugins/completions">
+    Generate shell completion scripts
+  </Card>
+  <Card title="Config Plugin" icon="file" href="/plugins/config">
+    Load configuration from files
+  </Card>
+  <Card title="Creating Plugins" icon="code" href="/plugins/creating-plugins">
+    Build your own plugins
+  </Card>
+  <Card title="Plugin Hooks" icon="hook" href="/plugins/plugin-hooks">
+    Learn about lifecycle hooks
+  </Card>
+</CardGroup>

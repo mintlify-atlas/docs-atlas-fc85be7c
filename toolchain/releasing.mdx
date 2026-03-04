@@ -1,0 +1,546 @@
+---
+title: Releasing
+description: Create and publish releases of your Bunli CLI to npm and GitHub with automated versioning and binary distribution
+---
+
+The `bunli release` command automates the release process for your CLI. It handles version bumping, building, testing, git tagging, npm publishing, and GitHub releases.
+
+## Usage
+
+```bash
+bunli release [options]
+```
+
+### Basic Examples
+
+```bash
+# Interactive release (prompts for version)
+bunli release
+
+# Patch release (0.1.0 → 0.1.1)
+bunli release --version patch
+
+# Minor release (0.1.0 → 0.2.0)
+bunli release --version minor
+
+# Major release (0.1.0 → 1.0.0)
+bunli release --version major
+
+# Custom version
+bunli release --version 2.0.0-beta.1
+
+# Dry run (show what would happen)
+bunli release --dry
+```
+
+## Options
+
+| Option | Alias | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--version` | `-V` | `'patch' \| 'minor' \| 'major' \| string` | - | Version to release (patch/minor/major/x.y.z) |
+| `--tag` | `-t` | `string` | - | Git tag format |
+| `--npm` | - | `boolean` | - | Publish to npm |
+| `--github` | - | `boolean` | - | Create GitHub release |
+| `--dry` | `-d` | `boolean` | `false` | Dry run - show what would be done |
+| `--all` | - | `boolean` | `false` | Release all packages (workspace mode) |
+
+## Release Workflow
+
+The release command executes these steps:
+
+1. **Run tests** - Ensures all tests pass
+2. **Update version** - Bumps version in package.json
+3. **Build project** - Runs `bun run build`
+4. **Publish platform packages** (if binary release)
+5. **Create git tag** - Tags with version
+6. **Publish to npm** (if enabled)
+7. **Create GitHub release** (if enabled)
+
+### Implementation
+
+```typescript
+// From packages/cli/src/commands/release.ts:225-282
+const steps: ReleaseStep[] = [
+  {
+    name: 'Running tests',
+    cmd: async () => {
+      const result = await $`bun test`.nothrow()
+      const stderr = result.stderr.toString()
+      if (result.exitCode !== 0 && !stderr.includes('No tests found')) {
+        throw new Error(`Tests failed with exit code ${result.exitCode}`)
+      }
+    }
+  },
+  {
+    name: 'Updating version',
+    runInDry: true,
+    cmd: () => updatePackageVersion(newVersion)
+  },
+  {
+    name: 'Building project',
+    cmd: () => $`bun run build`.then()
+  },
+  ...(binaryContext ? [{
+    name: 'Publishing platform packages',
+    runInDry: true,
+    cmd: async () => {
+      const published = await publishPlatformPackages({...})
+      await updateMainPackageForBinary(published, binaryConfig!.shimPath, cliBinName)
+      await generateShim(binaryConfig!.shimPath, published, cliBinName)
+    }
+  }] : []),
+  {
+    name: 'Creating git tag',
+    cmd: () => createGitTag({...})
+  },
+  {
+    name: 'Publishing to npm',
+    skip: !publishNpm,
+    runInDry: true,
+    cmd: () => publishToNpm(pkg, flags.dry)
+  },
+  {
+    name: 'Creating GitHub release',
+    skip: !publishGitHub,
+    cmd: () => createGitHubRelease(tag)
+  }
+]
+```
+
+## Version Bumping
+
+### Interactive Version Selection
+
+Without `--version`, the command prompts:
+
+```typescript
+// From packages/cli/src/commands/release.ts:373-395
+export async function determineVersion(versionFlag: string | undefined, current: string, prompt: PromptApi): Promise<string> {
+  if (versionFlag) {
+    if (['patch', 'minor', 'major'].includes(versionFlag)) {
+      return bumpVersion(current, versionFlag as 'patch' | 'minor' | 'major')
+    }
+    return versionFlag
+  }
+
+  const choice = await prompt.select<'patch' | 'minor' | 'major' | 'custom'>('Select version bump:', {
+    options: [
+      { label: `patch (${bumpVersion(current, 'patch')})`, value: 'patch' },
+      { label: `minor (${bumpVersion(current, 'minor')})`, value: 'minor' },
+      { label: `major (${bumpVersion(current, 'major')})`, value: 'major' },
+      { label: 'custom', value: 'custom' }
+    ]
+  })
+
+  if (choice === 'custom') {
+    return await prompt('Enter version:')
+  }
+
+  return bumpVersion(current, choice)
+}
+```
+
+Example prompt:
+
+```
+Select version bump:
+  1. patch (0.1.1)
+  2. minor (0.2.0)
+  3. major (1.0.0)
+  4. custom
+```
+
+### Semantic Versioning
+
+```typescript
+// From packages/cli/src/commands/release.ts:397-405
+export function bumpVersion(version: string, type: 'patch' | 'minor' | 'major'): string {
+  const parts = version.split('.').map(Number)
+  const [major = 0, minor = 0, patch = 0] = parts
+  switch (type) {
+    case 'patch': return `${major}.${minor}.${patch + 1}`
+    case 'minor': return `${major}.${minor + 1}.0`
+    case 'major': return `${major + 1}.0.0`
+  }
+}
+```
+
+## Git Integration
+
+### Working Directory Check
+
+Ensures working directory is clean:
+
+```typescript
+// From packages/cli/src/commands/release.ts:149-157
+try {
+  const status = await $`git status --porcelain`.text()
+  if (status.trim() && !flags.dry) {
+    console.error(colors.red('Working directory is not clean. Please commit or stash changes first.'))
+    process.exit(1)
+  }
+} catch {
+  console.error(colors.red('Not a git repository'))
+  process.exit(1)
+}
+```
+
+### Creating Git Tags
+
+```typescript
+// From packages/cli/src/commands/release.ts:531-546
+async function createGitTag(opts: { tag: string; conventionalCommits: boolean; shimPath?: string }) {
+  const { tag, conventionalCommits, shimPath } = opts
+
+  await $`git add package.json`
+  if (shimPath) {
+    await $`git add ${shimPath}`.nothrow()
+  }
+
+  const commitMessage = conventionalCommits
+    ? `chore(release): ${tag}`
+    : `chore: release ${tag}`
+
+  await $`git commit -m ${commitMessage}`
+  await $`git tag ${tag}`
+  await $`git push origin main --tags`
+}
+```
+
+### Tag Format
+
+Customize tag format:
+
+```typescript
+export default defineConfig({
+  release: {
+    tagFormat: 'v{{version}}'  // v0.1.0
+  }
+})
+```
+
+```typescript
+// From packages/cli/src/commands/release.ts:97-99
+export function formatTag(version: string, tagFormat: string): string {
+  return tagFormat.replaceAll('{{version}}', version).replaceAll('${version}', version)
+}
+```
+
+## NPM Publishing
+
+### Standard Publishing
+
+```typescript
+// From packages/cli/src/commands/release.ts:548-563
+async function publishToNpm(pkg: PackageJson, dry: boolean) {
+  if (pkg.private) {
+    throw new Error('Cannot publish private package to npm')
+  }
+
+  const publishArgs = getNpmPublishArgs(dry)
+  const proc = Bun.spawn(publishArgs, {
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+  const exitCode = await proc.exited
+  if (exitCode !== 0) {
+    throw new Error(`npm publish failed (exit code ${exitCode})`)
+  }
+}
+```
+
+```typescript
+// From packages/cli/src/commands/release.ts:101-103
+export function getNpmPublishArgs(dry: boolean): string[] {
+  return ['npm', 'publish', '--access', 'public', ...(dry ? ['--dry-run'] : [])]
+}
+```
+
+## Binary Releases
+
+Bunli supports binary releases with platform-specific packages:
+
+### Configuration
+
+```typescript
+export default defineConfig({
+  build: {
+    targets: ['darwin-arm64', 'darwin-x64', 'linux-x64', 'windows-x64'],
+    compress: false  // IMPORTANT: Must be false for binary releases
+  },
+  release: {
+    npm: true,
+    binary: {
+      packageNameFormat: '@mycli/{{name}}-{{platform}}',
+      shimPath: './shim.js'
+    }
+  }
+})
+```
+
+### How Binary Releases Work
+
+1. **Build platform binaries** using `bunli build --targets`
+2. **Create platform packages** for each binary
+3. **Publish platform packages** to npm
+4. **Generate shim script** that selects correct binary
+5. **Update main package** with optionalDependencies
+
+### Platform Packages
+
+```typescript
+// From packages/cli/src/commands/release.ts:446-473
+const platformPkgJson = {
+  name: pkgName,
+  version: newVersion,
+  description: `${platform} binary for ${pkg.name}`,
+  os: [meta.os],
+  cpu: [meta.cpu],
+  bin: { [cliBinName]: `bin/${cliBinName}${ext}` },
+  ...(pkg.license ? { license: pkg.license } : {}),
+}
+```
+
+Example packages:
+- `@mycli/mycli-darwin-arm64`
+- `@mycli/mycli-linux-x64`
+- `@mycli/mycli-windows-x64`
+
+### Shim Generation
+
+The shim script selects the correct binary at runtime:
+
+```typescript
+// From packages/cli/src/commands/release.ts:514-529
+async function generateShim(
+  shimPath: string,
+  published: PublishedPlatformPackage[],
+  cliBinName: string
+) {
+  const platformMap = buildShimPlatformMap(published)
+
+  const shimContent = shimTemplate
+    .replace('__PLATFORM_MAP__', JSON.stringify(platformMap, null, 2))
+    .replaceAll('__CLI_BIN_NAME__', cliBinName)
+
+  const shimDir = path.dirname(shimPath)
+  await $`mkdir -p ${shimDir}`
+  await Bun.write(shimPath, shimContent)
+  await $`chmod +x ${shimPath}`
+}
+```
+
+### Optional Dependencies
+
+The main package lists platform packages as optional:
+
+```typescript
+// From packages/cli/src/commands/release.ts:502-512
+async function updateMainPackageForBinary(
+  published: PublishedPlatformPackage[],
+  shimPath: string,
+  cliBinName: string
+) {
+  const pkg = await loadPackageJson()
+  const optionalDeps = Object.fromEntries(published.map(item => [item.packageName, item.version]))
+  pkg.optionalDependencies = { ...pkg.optionalDependencies, ...optionalDeps }
+  pkg.bin = { ...pkg.bin, [cliBinName]: shimPath }
+  await Bun.write('package.json', JSON.stringify(pkg, null, 2) + '\n')
+}
+```
+
+Results in:
+
+```json
+{
+  "bin": {
+    "mycli": "./shim.js"
+  },
+  "optionalDependencies": {
+    "@mycli/mycli-darwin-arm64": "1.0.0",
+    "@mycli/mycli-linux-x64": "1.0.0",
+    "@mycli/mycli-windows-x64": "1.0.0"
+  }
+}
+```
+
+### Supported Platforms
+
+```typescript
+// From packages/cli/src/commands/release.ts:49-57
+const ALL_PLATFORMS = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'windows-x64']
+
+const PLATFORM_META: Record<string, { os: string; cpu: string }> = {
+  'darwin-arm64': { os: 'darwin', cpu: 'arm64' },
+  'darwin-x64': { os: 'darwin', cpu: 'x64' },
+  'linux-arm64': { os: 'linux', cpu: 'arm64' },
+  'linux-x64': { os: 'linux', cpu: 'x64' },
+  'windows-x64': { os: 'win32', cpu: 'x64' },
+}
+```
+
+## GitHub Releases
+
+Create GitHub releases using the GitHub CLI:
+
+```typescript
+// From packages/cli/src/commands/release.ts:565-574
+async function createGitHubRelease(tag: string) {
+  try {
+    await $`gh --version`.quiet()
+  } catch {
+    console.warn('GitHub CLI not found, skipping GitHub release')
+    return
+  }
+
+  await $`gh release create ${tag} --title "Release ${tag}" --generate-notes`
+}
+```
+
+Requires [GitHub CLI](https://cli.github.com/) to be installed.
+
+## Conventional Commits
+
+Use conventional commit format for release commits:
+
+```typescript
+export default defineConfig({
+  release: {
+    conventionalCommits: true
+  }
+})
+```
+
+Commit format:
+- With conventional commits: `chore(release): v1.0.0`
+- Without: `chore: release v1.0.0`
+
+## Configuration
+
+Complete release configuration:
+
+```typescript
+import { defineConfig } from 'bunli'
+
+export default defineConfig({
+  build: {
+    entry: './src/cli.ts',
+    targets: ['darwin-arm64', 'linux-x64', 'windows-x64'],
+    compress: false  // Required for binary releases
+  },
+  release: {
+    npm: true,
+    github: true,
+    tagFormat: 'v{{version}}',
+    conventionalCommits: true,
+    binary: {
+      packageNameFormat: '@mycli/{{name}}-{{platform}}',
+      shimPath: './shim.js'
+    }
+  }
+})
+```
+
+## Dry Run
+
+Test the release process without making changes:
+
+```bash
+bunli release --dry
+```
+
+Dry run:
+- Runs tests
+- Shows version changes
+- Simulates npm publish
+- Skips git operations
+- Restores package.json after completion
+
+```typescript
+// From packages/cli/src/commands/release.ts:307-316
+if (flags.dry) {
+  await Bun.write('package.json', originalPackageJson)
+  if (shimPath) {
+    if (shimExisted && originalShimContent !== null) {
+      await Bun.write(shimPath, originalShimContent)
+    } else {
+      await $`rm -f ${shimPath}`.nothrow()
+    }
+  }
+}
+```
+
+## Output Example
+
+```bash
+$ bunli release --version patch
+
+Releasing mycli
+  Current: 0.1.0
+  New:     0.1.1
+  Tag:     v0.1.1
+
+Continue with release? (Y/n) › y
+
+⠋ Running tests...
+✅ Running tests
+⠋ Updating version...
+✅ Updating version
+⠋ Building project...
+✅ Building project
+⠋ Creating git tag...
+✅ Creating git tag
+⠋ Publishing to npm...
+✅ Publishing to npm
+⠋ Creating GitHub release...
+✅ Creating GitHub release
+
+✨ Released mycli v0.1.1!
+GitHub: https://github.com/user/mycli/releases/tag/v0.1.1
+NPM: https://npmjs.com/package/mycli
+```
+
+## Troubleshooting
+
+### Private Package Error
+
+```
+Cannot publish private package to npm
+```
+
+Remove `"private": true` from package.json or disable npm publishing:
+
+```bash
+bunli release --npm=false
+```
+
+### Dirty Working Directory
+
+```
+Working directory is not clean
+```
+
+Commit or stash changes before releasing.
+
+### GitHub CLI Not Found
+
+Install [GitHub CLI](https://cli.github.com/) or disable GitHub releases:
+
+```bash
+bunli release --github=false
+```
+
+### Binary Release with Compression
+
+```
+Binary release is incompatible with build.compress: true
+```
+
+Set `compress: false` in your build config.
+
+## See Also
+
+- [Building](/toolchain/building) - Build configuration for releases
+- [Configuration](/configuration) - Release configuration options
+- [Publishing Guide](/guides/publishing) - Complete publishing guide

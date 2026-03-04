@@ -1,0 +1,406 @@
+---
+title: Creating Plugins
+description: Build custom plugins to extend your Bunli CLI
+---
+
+## Plugin Factory
+
+Use `createPlugin` to build type-safe plugins:
+
+```typescript
+import { createPlugin } from '@bunli/core/plugin'
+import type { BunliPlugin } from '@bunli/core/plugin'
+
+// Simple plugin
+const myPlugin = createPlugin({
+  name: 'my-plugin',
+  version: '1.0.0',
+  
+  setup(context) {
+    console.log('Plugin initialized!')
+  }
+})
+```
+
+## Plugin Structure
+
+A plugin is an object with a name and optional lifecycle hooks:
+
+```typescript
+interface BunliPlugin<TStore = {}> {
+  /** Unique plugin name */
+  name: string
+  
+  /** Optional plugin version */
+  version?: string
+  
+  /** Plugin store schema/initial state */
+  store?: TStore
+  
+  /** Setup hook - Called during CLI initialization */
+  setup?(context: PluginContext): void | Promise<void>
+  
+  /** Config resolved hook - Called after config is finalized */
+  configResolved?(config: ResolvedConfig): void | Promise<void>
+  
+  /** Before command hook - Called before command execution */
+  beforeCommand?(context: CommandContext): void | Promise<void>
+  
+  /** After command hook - Called after command execution */
+  afterCommand?(context: CommandContext & CommandResult): void | Promise<void>
+}
+```
+
+## Type-Safe Store
+
+Define a typed store for shared state:
+
+```typescript
+interface MyStore {
+  requestCount: number
+  apiKey?: string
+  cache: Map<string, any>
+}
+
+const plugin = createPlugin<MyStore>({
+  name: 'request-tracker',
+  
+  // Initial store state
+  store: {
+    requestCount: 0,
+    cache: new Map()
+  },
+  
+  beforeCommand(context) {
+    // TypeScript knows the exact store type!
+    context.store.requestCount++
+    console.log(`Request #${context.store.requestCount}`)
+  }
+})
+```
+
+## Plugin Factory with Options
+
+Create configurable plugins using factory functions:
+
+```typescript
+interface LoggingOptions {
+  level: 'debug' | 'info' | 'warn' | 'error'
+  prefix?: string
+}
+
+interface LoggingStore {
+  logs: string[]
+}
+
+export const loggingPlugin = createPlugin<LoggingOptions, LoggingStore>(
+  (options) => ({
+    name: 'logging',
+    version: '1.0.0',
+    
+    store: {
+      logs: []
+    },
+    
+    beforeCommand(context) {
+      const prefix = options.prefix || ''
+      const message = `${prefix}[${options.level}] Command: ${context.command}`
+      context.store.logs.push(message)
+      console.log(message)
+    }
+  })
+)
+
+// Use with options
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    loggingPlugin({ level: 'debug', prefix: '🔍' })
+  ]
+})
+```
+
+## Complete Plugin Example
+
+Here's a complete plugin that tracks command metrics:
+
+```typescript packages/examples/metrics-plugin.ts
+import { createPlugin } from '@bunli/core/plugin'
+
+interface MetricsStore {
+  metrics: {
+    events: Array<{
+      name: string
+      timestamp: Date
+      data: Record<string, any>
+    }>
+    recordEvent: (name: string, data?: Record<string, any>) => void
+    getEvents: (name?: string) => Array<any>
+    clearEvents: () => void
+  }
+}
+
+export const metricsPlugin = createPlugin<MetricsStore>({
+  name: 'metrics',
+  
+  store: {
+    metrics: {
+      events: [],
+      
+      recordEvent(name: string, data: Record<string, any> = {}) {
+        this.events.push({
+          name,
+          timestamp: new Date(),
+          data
+        })
+        
+        // Keep only last 100 events to prevent memory leaks
+        if (this.events.length > 100) {
+          this.events = this.events.slice(-100)
+        }
+      },
+      
+      getEvents(name?: string) {
+        if (name) {
+          return this.events.filter(event => event.name === name)
+        }
+        return [...this.events]
+      },
+      
+      clearEvents() {
+        this.events = []
+      }
+    }
+  },
+  
+  beforeCommand({ store, command }) {
+    store.metrics.recordEvent('command_started', {
+      command,
+      timestamp: new Date().toISOString()
+    })
+  },
+  
+  afterCommand({ store, command, exitCode }) {
+    store.metrics.recordEvent('command_completed', {
+      command,
+      exitCode,
+      timestamp: new Date().toISOString()
+    })
+  }
+})
+```
+
+## Plugin Lifecycle
+
+### 1. Setup Phase
+
+Called once during CLI initialization:
+
+```typescript
+setup(context) {
+  // Access initial config
+  console.log('CLI name:', context.config.name)
+  
+  // Modify configuration
+  context.updateConfig({ description: 'Enhanced CLI' })
+  
+  // Register commands
+  context.registerCommand({
+    name: 'custom',
+    handler: async () => { /* ... */ }
+  })
+  
+  // Add middleware
+  context.use(async (ctx, next) => {
+    await next()
+  })
+  
+  // Access paths
+  console.log('Config dir:', context.paths.config)
+  console.log('Home dir:', context.paths.home)
+  console.log('Working dir:', context.paths.cwd)
+}
+```
+
+### 2. Config Resolved Phase
+
+Called after all plugins have run setup and config is finalized:
+
+```typescript
+configResolved(config) {
+  // Config is now immutable
+  console.log('Final CLI config:', config)
+}
+```
+
+### 3. Before Command Phase
+
+Called before each command execution:
+
+```typescript
+beforeCommand(context) {
+  // Access command info
+  console.log('Command:', context.command)
+  console.log('Args:', context.args)
+  console.log('Flags:', context.flags)
+  
+  // Access environment
+  if (context.env.isCI) {
+    console.log('Running in CI')
+  }
+  
+  // Modify store
+  context.store.requestCount++
+}
+```
+
+### 4. After Command Phase
+
+Called after command execution completes:
+
+```typescript
+afterCommand(context) {
+  // Access result
+  console.log('Exit code:', context.exitCode)
+  console.log('Result:', context.result)
+  
+  if (context.error) {
+    console.error('Command failed:', context.error)
+  }
+}
+```
+
+## Testing Plugins
+
+Use built-in testing utilities:
+
+```typescript
+import { testPluginHooks, assertPluginBehavior } from '@bunli/core/plugin'
+
+const results = await testPluginHooks(myPlugin, {
+  config: { name: 'test-cli' },
+  command: 'test',
+  args: ['arg1'],
+  flags: { verbose: true }
+})
+
+assertPluginBehavior(results, {
+  setupShouldSucceed: true,
+  beforeCommandShouldSucceed: true
+})
+```
+
+### Mock Contexts
+
+Create mock contexts for unit testing:
+
+```typescript
+import { createMockPluginContext, createMockCommandContext } from '@bunli/core/plugin'
+
+const pluginCtx = createMockPluginContext({
+  name: 'test-cli'
+})
+
+const commandCtx = createMockCommandContext('test', ['arg'], { verbose: true })
+
+await myPlugin.setup?.(pluginCtx)
+await myPlugin.beforeCommand?.(commandCtx)
+```
+
+### Test Plugin Factory
+
+Quickly create test plugins:
+
+```typescript
+import { createTestPlugin } from '@bunli/core/plugin'
+
+const testPlugin = createTestPlugin(
+  { count: 0 },
+  {
+    beforeCommand(context) {
+      context.store.count++
+    }
+  }
+)
+```
+
+## Error Handling
+
+Use `better-result` for type-safe error handling:
+
+```typescript
+import { Result, TaggedError } from 'better-result'
+
+class PluginConfigError extends TaggedError('PluginConfigError')<{
+  message: string
+  cause?: unknown
+}>() {}
+
+const plugin = createPlugin({
+  name: 'safe-plugin',
+  
+  async setup(context) {
+    const configResult = await Result.tryPromise({
+      try: async () => loadConfig(),
+      catch: (cause) => new PluginConfigError({
+        message: 'Failed to load config',
+        cause
+      })
+    })
+    
+    if (Result.isError(configResult)) {
+      context.logger.error(configResult.error.message)
+      return
+    }
+    
+    const config = configResult.value
+    // Use config...
+  }
+})
+```
+
+## Best Practices
+
+### Plugin Naming
+
+- Use descriptive names: `@scope/plugin-feature` or `my-cli-plugin`
+- Include version for debugging
+- Follow npm package naming conventions
+
+### Store Design
+
+- Keep store lightweight - avoid large objects
+- Use methods for complex operations
+- Never use `Object.freeze()` - breaks Zod validation
+- Prefer flat structures over deep nesting
+
+### Hook Performance
+
+- Keep `beforeCommand` fast - runs on every command
+- Use `setup` for expensive initialization
+- Avoid blocking I/O in hot paths
+- Consider lazy loading for heavy dependencies
+
+### Type Safety
+
+- Always type the store: `createPlugin<MyStore>()`
+- Use `as const` for plugin arrays
+- Export store types for consumers
+- Leverage TypeScript's inference
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Plugin Hooks" icon="hook" href="/plugins/plugin-hooks">
+    Deep dive into lifecycle hooks
+  </Card>
+  <Card title="Plugin Store" icon="database" href="/plugins/plugin-store">
+    Master type-safe shared state
+  </Card>
+  <Card title="Official Plugins" icon="puzzle-piece" href="/plugins/ai-detect">
+    Study real plugin implementations
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/plugin">
+    Complete plugin API documentation
+  </Card>
+</CardGroup>

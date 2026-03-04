@@ -1,0 +1,356 @@
+---
+title: 'option'
+description: 'Define type-safe CLI options with validation schemas'
+---
+
+## Function signature
+
+```typescript packages/core/src/types.ts:287-295
+export function option<S extends StandardSchemaV1>(
+  schema: S,
+  metadata?: { 
+    short?: string
+    description?: string 
+  }
+): CLIOption<S> {
+  return {
+    schema,
+    ...metadata
+  }
+}
+```
+
+A helper function for creating CLI options with validation schemas. The function accepts any [Standard Schema](https://standardschema.dev/) implementation (Zod, Valibot, Arktype, etc.) and optional metadata.
+
+## Parameters
+
+<ParamField path="schema" type="StandardSchemaV1" required>
+  A Standard Schema validation schema. Commonly used with Zod schemas.
+  
+  The schema defines:
+  - The option's type (string, number, boolean, etc.)
+  - Default values
+  - Validation rules
+  - Transformations
+</ParamField>
+
+<ParamField path="metadata" type="object">
+  Optional metadata for the option.
+
+  <Expandable title="properties">
+    <ResponseField name="short" type="string">
+      Single-character short flag (e.g., `'v'` for `-v`)
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Human-readable description shown in help text
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## Return value
+
+<ResponseField name="CLIOption" type="CLIOption<S>">
+  An option object that can be used in command definitions.
+
+  <Expandable title="properties">
+    <ResponseField name="schema" type="S" required>
+      The validation schema
+    </ResponseField>
+    <ResponseField name="short" type="string">
+      Short flag character
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Option description
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Schema types
+
+The `option()` function works with any Standard Schema implementation. Here are examples using Zod:
+
+### String options
+
+```typescript
+import { option } from '@bunli/core'
+import { z } from 'zod'
+
+// Required string
+const name = option(z.string(), {
+  description: 'User name',
+  short: 'n'
+})
+
+// Optional string with default
+const output = option(z.string().default('dist'), {
+  description: 'Output directory',
+  short: 'o'
+})
+
+// String with validation
+const email = option(z.string().email(), {
+  description: 'Email address'
+})
+```
+
+### Number options
+
+```typescript
+import { option } from '@bunli/core'
+import { z } from 'zod'
+
+// Number with default
+const port = option(z.number().default(3000), {
+  description: 'Server port',
+  short: 'p'
+})
+
+// Number with range validation
+const limit = option(z.number().min(1).max(100).default(10), {
+  description: 'Maximum results'
+})
+```
+
+### Boolean options
+
+```typescript
+import { option } from '@bunli/core'
+import { z } from 'zod'
+
+// Boolean flag (defaults to false)
+const verbose = option(z.boolean().default(false), {
+  description: 'Enable verbose output',
+  short: 'v'
+})
+
+// Boolean flag (defaults to true)
+const color = option(z.boolean().default(true), {
+  description: 'Enable colors'
+})
+```
+
+### Array options
+
+```typescript
+import { option } from '@bunli/core'
+import { z } from 'zod'
+
+// Array of strings
+const include = option(z.array(z.string()).default([]), {
+  description: 'Files to include'
+})
+
+// Non-empty array
+const targets = option(z.array(z.string()).min(1), {
+  description: 'Build targets'
+})
+```
+
+### Enum options
+
+```typescript
+import { option } from '@bunli/core'
+import { z } from 'zod'
+
+// String enum
+const logLevel = option(z.enum(['error', 'warn', 'info', 'debug']).default('info'), {
+  description: 'Log level',
+  short: 'l'
+})
+
+// Union type
+const format = option(z.union([z.literal('json'), z.literal('yaml')]).default('json'), {
+  description: 'Output format'
+})
+```
+
+### Complex options
+
+```typescript
+import { option } from '@bunli/core'
+import { z } from 'zod'
+
+// Object option
+const config = option(z.object({
+  host: z.string(),
+  port: z.number()
+}), {
+  description: 'Server configuration'
+})
+
+// Transformed option
+const date = option(z.string().transform(str => new Date(str)), {
+  description: 'Date in ISO format'
+})
+
+// Coerced option (auto-convert from string)
+const count = option(z.coerce.number().default(0), {
+  description: 'Item count'
+})
+```
+
+## Usage in commands
+
+Options are defined in the `options` property of a command:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+export const buildCommand = defineCommand({
+  name: 'build',
+  description: 'Build the project',
+  options: {
+    outDir: option(z.string().default('dist'), {
+      description: 'Output directory',
+      short: 'o'
+    }),
+    minify: option(z.boolean().default(false), {
+      description: 'Minify output',
+      short: 'm'
+    }),
+    target: option(z.array(z.string()).default([]), {
+      description: 'Build targets',
+      short: 't'
+    })
+  },
+  async handler({ flags, shell }) {
+    // flags.outDir is typed as string
+    // flags.minify is typed as boolean
+    // flags.target is typed as string[]
+    
+    console.log(`Building to ${flags.outDir}...`)
+    
+    for (const target of flags.target) {
+      await shell`build --target ${target}`
+    }
+  }
+})
+```
+
+## Command line usage
+
+Options can be passed using different styles:
+
+```bash
+# Long form
+my-cli build --outDir=dist --minify
+
+# Long form with space
+my-cli build --outDir dist --minify
+
+# Short form
+my-cli build -o dist -m
+
+# Mixed
+my-cli build -o dist --minify
+
+# Array options (repeatable)
+my-cli build --target node --target browser
+
+# Boolean negation (for options with default: true)
+my-cli build --no-minify
+```
+
+## Validation
+
+Options are validated using the provided schema before the handler executes:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+export const deployCommand = defineCommand({
+  name: 'deploy',
+  description: 'Deploy the application',
+  options: {
+    environment: option(z.enum(['dev', 'staging', 'production']), {
+      description: 'Deployment environment',
+      short: 'e'
+    }),
+    replicas: option(z.number().min(1).max(10).default(1), {
+      description: 'Number of replicas'
+    })
+  },
+  async handler({ flags }) {
+    // flags.environment is guaranteed to be 'dev' | 'staging' | 'production'
+    // flags.replicas is guaranteed to be a number between 1 and 10
+  }
+})
+```
+
+If validation fails, the CLI displays a helpful error message:
+
+```bash
+$ my-cli deploy --environment prod --replicas 20
+Validation Error:
+  environment:
+    • Invalid enum value. Expected 'dev' | 'staging' | 'production', received 'prod'
+  replicas:
+    • Number must be less than or equal to 10
+```
+
+## Using other schema libraries
+
+Since Bunli uses Standard Schema, you can use any compatible validation library:
+
+### Valibot
+
+```typescript
+import { option } from '@bunli/core'
+import * as v from 'valibot'
+
+const name = option(v.string(), {
+  description: 'User name'
+})
+
+const age = option(v.pipe(v.number(), v.minValue(0), v.maxValue(120)), {
+  description: 'User age'
+})
+```
+
+### Arktype
+
+```typescript
+import { option } from '@bunli/core'
+import { type } from 'arktype'
+
+const email = option(type('string.email'), {
+  description: 'Email address'
+})
+```
+
+## Type inference
+
+The `option()` function preserves full type information from the schema:
+
+```typescript
+import { option } from '@bunli/core'
+import { z } from 'zod'
+
+// Type is inferred as string
+const name = option(z.string())
+
+// Type is inferred as number
+const count = option(z.number().default(0))
+
+// Type is inferred as 'json' | 'yaml'
+const format = option(z.enum(['json', 'yaml']).default('json'))
+
+// Types are available in the handler
+defineCommand({
+  name: 'example',
+  options: { name, count, format },
+  handler({ flags }) {
+    flags.name   // string
+    flags.count  // number
+    flags.format // 'json' | 'yaml'
+  }
+})
+```
+
+## Related
+
+- [defineCommand](/api/core/define-command) - Define commands with options
+- [createCLI](/api/core/create-cli) - Create a CLI instance
+- [Standard Schema](https://standardschema.dev/) - Universal validation specification

@@ -1,0 +1,551 @@
+---
+title: Handlers
+description: Implement command logic with type-safe handlers and rich context
+---
+
+Handlers are async functions that execute your command logic. They receive a rich context object with parsed options, terminal utilities, and plugin context.
+
+## Handler Function
+
+Define a handler in your command:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+const syncCommand = defineCommand({
+  name: 'sync',
+  description: 'Sync with remote repository',
+  options: {
+    remote: option(z.string().default('origin')),
+    force: option(z.coerce.boolean().default(false))
+  },
+  handler: async ({ flags, shell, spinner, colors }) => {
+    const spin = spinner('Syncing with remote...')
+    
+    try {
+      await shell`git fetch ${flags.remote}`
+      spin.succeed('Sync completed')
+    } catch (error) {
+      spin.fail('Sync failed')
+      throw error
+    }
+  }
+})
+```
+
+## Handler Signature
+
+Handlers receive a single argument with the following type:
+
+```typescript
+type Handler<TFlags, TStore> = (
+  args: HandlerArgs<TFlags, TStore>
+) => void | Promise<void>
+```
+
+## Handler Context
+
+The `HandlerArgs` object provides everything needed to implement your command:
+
+### Parsed Options
+
+<ParamField path="flags" type="TFlags">
+  Parsed and validated command options with full type inference.
+  
+  ```typescript
+  handler: async ({ flags }) => {
+    // flags.port is number (validated)
+    // flags.host is string (validated)
+    console.log(`Server: ${flags.host}:${flags.port}`)
+  }
+  ```
+</ParamField>
+
+<ParamField path="positional" type="string[]">
+  Positional arguments passed after options.
+  
+  ```typescript
+  // mycli deploy app1 app2 --env production
+  handler: async ({ positional, flags }) => {
+    // positional = ['app1', 'app2']
+    // flags.env = 'production'
+  }
+  ```
+</ParamField>
+
+### Shell Execution
+
+<ParamField path="shell" type="typeof Bun.$">
+  Bun Shell for executing commands. Provides template literal syntax with automatic escaping.
+  
+  ```typescript
+  handler: async ({ shell }) => {
+    // Execute commands safely
+    const result = await shell`git status`
+    console.log(result.stdout.toString())
+    
+    // Variables are automatically escaped
+    const branch = 'main'
+    await shell`git checkout ${branch}`
+    
+    // Pipe commands
+    await shell`cat file.txt | grep "pattern" | wc -l`
+  }
+  ```
+</ParamField>
+
+### Environment
+
+<ParamField path="env" type="typeof process.env">
+  Process environment variables.
+  
+  ```typescript
+  handler: async ({ env }) => {
+    const apiKey = env.API_KEY
+    const nodeEnv = env.NODE_ENV || 'development'
+  }
+  ```
+</ParamField>
+
+<ParamField path="cwd" type="string">
+  Current working directory.
+  
+  ```typescript
+  handler: async ({ cwd }) => {
+    console.log(`Running in: ${cwd}`)
+  }
+  ```
+</ParamField>
+
+### Terminal Utilities
+
+<ParamField path="prompt" type="PromptApi">
+  Interactive prompts for user input.
+  
+  ```typescript
+  handler: async ({ prompt }) => {
+    // Text input
+    const name = await prompt.text('What is your name?')
+    
+    // Confirmation
+    const confirmed = await prompt.confirm('Continue?', { default: true })
+    
+    // Selection
+    const choice = await prompt.select('Choose option:', {
+      choices: ['Option A', 'Option B', 'Option C']
+    })
+    
+    // Password
+    const password = await prompt.password('Enter password:')
+  }
+  ```
+</ParamField>
+
+<ParamField path="spinner" type="PromptSpinnerFactory">
+  Create animated spinners for long-running operations.
+  
+  ```typescript
+  handler: async ({ spinner }) => {
+    const spin = spinner('Loading...')
+    
+    // Update message
+    spin.update('Processing...')
+    
+    // Complete successfully
+    spin.succeed('Done!')
+    
+    // Or show failure
+    spin.fail('Failed!')
+  }
+  ```
+</ParamField>
+
+<ParamField path="colors" type="typeof colors">
+  Terminal color utilities from `@bunli/utils`.
+  
+  ```typescript
+  handler: async ({ colors }) => {
+    console.log(colors.red('Error message'))
+    console.log(colors.green('Success message'))
+    console.log(colors.blue('Info message'))
+    console.log(colors.yellow('Warning message'))
+    console.log(colors.cyan('Highlighted text'))
+    console.log(colors.dim('Muted text'))
+    console.log(colors.bold('Bold text'))
+  }
+  ```
+</ParamField>
+
+### Terminal Information
+
+<ParamField path="terminal" type="TerminalInfo">
+  Information about the terminal environment.
+  
+  ```typescript
+  interface TerminalInfo {
+    width: number          // Terminal width in columns
+    height: number         // Terminal height in rows
+    isInteractive: boolean // TTY available
+    isCI: boolean          // Running in CI environment
+    supportsColor: boolean // Color support
+    supportsMouse: boolean // Mouse input support
+  }
+  
+  handler: async ({ terminal }) => {
+    if (terminal.isInteractive) {
+      // Show interactive UI
+    } else {
+      // Use simple output for CI/pipes
+    }
+  }
+  ```
+</ParamField>
+
+### Runtime Information
+
+<ParamField path="runtime" type="RuntimeInfo">
+  Runtime execution context.
+  
+  ```typescript
+  interface RuntimeInfo {
+    startTime: number    // Timestamp when command started
+    args: string[]       // Raw command-line arguments
+    command: string      // Command name being executed
+  }
+  
+  handler: async ({ runtime }) => {
+    const duration = Date.now() - runtime.startTime
+    console.log(`Completed in ${duration}ms`)
+  }
+  ```
+</ParamField>
+
+### Interrupt Handling
+
+<ParamField path="signal" type="AbortSignal">
+  Signal for cooperative cancellation (Ctrl+C handling).
+  
+  ```typescript
+  handler: async ({ signal }) => {
+    // Check if interrupted
+    if (signal.aborted) {
+      console.log('Operation cancelled')
+      return
+    }
+    
+    // Listen for interrupts
+    signal.addEventListener('abort', () => {
+      console.log('Cleaning up...')
+    })
+    
+    // Pass to async operations
+    await fetch('https://api.example.com', { signal })
+  }
+  ```
+</ParamField>
+
+### Plugin Context
+
+<ParamField path="context" type="CommandContext<TStore>">
+  Plugin context with shared store (available when plugins are loaded).
+  
+  ```typescript
+  handler: async ({ context }) => {
+    if (context) {
+      // Access plugin store
+      const value = context.store.somePluginData
+      
+      // Update store
+      context.setStoreValue('key', newValue)
+      
+      // Check if value exists
+      if (context.hasStoreValue('key')) {
+        const val = context.getStoreValue('key')
+      }
+    }
+  }
+  ```
+</ParamField>
+
+## Async Handlers
+
+All handlers are async and can use `await`:
+
+```typescript
+const deployCommand = defineCommand({
+  name: 'deploy',
+  options: {
+    env: option(z.enum(['dev', 'staging', 'prod']))
+  },
+  handler: async ({ flags, shell, spinner, colors }) => {
+    const spin = spinner('Deploying...')
+    
+    try {
+      // Build
+      spin.update('Building application...')
+      await shell`bun run build`
+      
+      // Test
+      spin.update('Running tests...')
+      await shell`bun test`
+      
+      // Deploy
+      spin.update(`Deploying to ${flags.env}...`)
+      await shell`./deploy.sh ${flags.env}`
+      
+      spin.succeed(colors.green('Deployment successful!'))
+    } catch (error) {
+      spin.fail(colors.red('Deployment failed'))
+      throw error
+    }
+  }
+})
+```
+
+## Error Handling in Handlers
+
+Handlers can throw errors which are caught by Bunli:
+
+<Tabs>
+  <Tab title="Basic Errors">
+    ```typescript
+    handler: async ({ flags }) => {
+      if (!flags.required) {
+        throw new Error('Missing required configuration')
+      }
+      // Continue execution
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Validation Errors">
+    ```typescript
+    import { BunliValidationError } from '@bunli/core'
+    
+    handler: async ({ flags }) => {
+      if (flags.port < 1000) {
+        throw new BunliValidationError(
+          'Port must be at least 1000',
+          {
+            option: 'port',
+            value: flags.port,
+            command: 'start',
+            expectedType: 'number',
+            hint: 'Use a port number between 1000-65535'
+          }
+        )
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Custom Errors">
+    ```typescript
+    import { TaggedError } from '@bunli/core'
+    
+    class DeploymentError extends TaggedError('DeploymentError')<{
+      message: string
+      environment: string
+      cause?: unknown
+    }>() {}
+    
+    handler: async ({ flags }) => {
+      try {
+        await deploy(flags.env)
+      } catch (cause) {
+        throw new DeploymentError({
+          message: 'Deployment failed',
+          environment: flags.env,
+          cause
+        })
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Working with Shell Commands
+
+The `shell` utility provides safe command execution:
+
+```typescript
+handler: async ({ shell, colors }) => {
+  // Simple command
+  await shell`echo "Hello, World!"`
+  
+  // Capture output
+  const result = await shell`git branch --show-current`
+  const branch = result.stdout.toString().trim()
+  console.log(colors.cyan(`Current branch: ${branch}`))
+  
+  // Handle errors
+  try {
+    await shell`git push origin main`
+  } catch (error) {
+    console.error(colors.red('Push failed'))
+    throw error
+  }
+  
+  // Conditional execution
+  const hasChanges = await shell`git status --porcelain`
+  if (hasChanges.stdout.toString().trim()) {
+    console.log('Uncommitted changes detected')
+  }
+  
+  // Pipe commands
+  const count = await shell`git log --oneline | wc -l`
+  console.log(`Total commits: ${count.stdout.toString().trim()}`)
+}
+```
+
+## Interactive Prompts
+
+Create interactive command experiences:
+
+```typescript
+const initCommand = defineCommand({
+  name: 'init',
+  description: 'Initialize a new project',
+  handler: async ({ prompt, shell, spinner, colors }) => {
+    // Gather information
+    const name = await prompt.text('Project name:', {
+      default: 'my-app'
+    })
+    
+    const type = await prompt.select('Project type:', {
+      choices: [
+        { label: 'Web App', value: 'web' },
+        { label: 'CLI Tool', value: 'cli' },
+        { label: 'Library', value: 'lib' }
+      ]
+    })
+    
+    const useTs = await prompt.confirm('Use TypeScript?', {
+      default: true
+    })
+    
+    // Create project
+    const spin = spinner('Creating project...')
+    
+    await shell`mkdir ${name}`
+    await shell`cd ${name} && npm init -y`
+    
+    if (useTs) {
+      await shell`cd ${name} && npm install -D typescript`
+    }
+    
+    spin.succeed(colors.green(`Project ${name} created!`))
+  }
+})
+```
+
+## Progress Indication
+
+Provide feedback for long-running operations:
+
+```typescript
+handler: async ({ spinner, colors }) => {
+  const tasks = [
+    'Installing dependencies',
+    'Building application',
+    'Running tests',
+    'Creating bundle'
+  ]
+  
+  for (const task of tasks) {
+    const spin = spinner(task)
+    
+    try {
+      // Simulate work
+      await performTask(task)
+      spin.succeed(colors.green(`✓ ${task}`))
+    } catch (error) {
+      spin.fail(colors.red(`✗ ${task}`))
+      throw error
+    }
+  }
+}
+```
+
+## Type-Safe Flags
+
+Bunli automatically infers flag types from options:
+
+```typescript
+const buildCommand = defineCommand({
+  name: 'build',
+  options: {
+    minify: option(z.coerce.boolean().default(false)),
+    sourcemap: option(z.coerce.boolean().default(true)),
+    outdir: option(z.string().default('dist')),
+    target: option(z.enum(['node', 'browser'])),
+    workers: option(z.coerce.number().optional())
+  },
+  handler: async ({ flags }) => {
+    // TypeScript knows the exact types:
+    // flags.minify: boolean
+    // flags.sourcemap: boolean
+    // flags.outdir: string
+    // flags.target: 'node' | 'browser'
+    // flags.workers: number | undefined
+    
+    if (flags.minify) {
+      // Minify code
+    }
+    
+    if (flags.workers) {
+      // Use specific number of workers
+    }
+  }
+})
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Always use async handlers">
+    Even if your handler is synchronous, use `async` for consistency.
+    ```typescript
+    handler: async ({ colors }) => {
+      console.log(colors.green('Done'))
+    }
+    ```
+  </Step>
+  
+  <Step title="Provide progress feedback">
+    Use spinners and messages for operations that take time.
+    ```typescript
+    const spin = spinner('Processing...')
+    await longOperation()
+    spin.succeed('Complete!')
+    ```
+  </Step>
+  
+  <Step title="Handle interrupts gracefully">
+    Check the abort signal and clean up resources.
+    ```typescript
+    signal.addEventListener('abort', async () => {
+      await cleanup()
+    })
+    ```
+  </Step>
+  
+  <Step title="Use structured error handling">
+    Throw meaningful errors with context.
+    ```typescript
+    throw new DeploymentError({
+      message: 'Deploy failed',
+      environment: flags.env,
+      cause: originalError
+    })
+    ```
+  </Step>
+</Steps>
+
+## See Also
+
+- [Commands](/concepts/commands) - Define CLI commands
+- [Options](/concepts/options) - Define command options
+- [Error Handling](/concepts/error-handling) - Handle errors gracefully
+- [Prompts API](/api/prompts) - Interactive prompt utilities

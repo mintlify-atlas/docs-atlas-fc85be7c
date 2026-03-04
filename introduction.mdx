@@ -1,0 +1,137 @@
+---
+title: Introduction to Bunli
+description: A minimal, type-safe CLI framework designed specifically for Bun with advanced plugin system and TUI capabilities
+---
+
+Bunli is a complete CLI development ecosystem for Bun that makes building command-line tools fast, type-safe, and enjoyable. It leverages Bun's unique features like the Bun Shell, fast startup times, and native TypeScript support to create efficient command-line tools that compile to standalone binaries.
+
+## What is Bunli?
+
+Bunli is a CLI framework that provides everything you need to build professional command-line applications:
+
+- **Type-safe command definitions** with automatic type inference using Zod schemas
+- **Plugin architecture** for extending functionality with typed stores
+- **Terminal UI components** powered by OpenTUI and React
+- **Development toolchain** with hot-reload, testing, and building
+- **Shell completions** for bash, zsh, and fish
+- **Standalone binaries** that compile your CLI to a single executable
+
+<Note>
+Bunli requires Bun >= 1.0.0. If you don't have Bun installed, visit [bun.sh](https://bun.sh) to get started.
+</Note>
+
+## Who is Bunli for?
+
+Bunli is perfect for developers who want to:
+
+- Build CLIs with full TypeScript type safety from commands to runtime
+- Create interactive terminal applications with React components
+- Package CLIs as standalone binaries for easy distribution
+- Leverage Bun's performance and built-in tools (shell, test runner, bundler)
+- Extend functionality through a powerful plugin system
+
+## Key benefits
+
+<CardGroup cols={2}>
+  <Card title="Type safety" icon="shield-check">
+    Full end-to-end type inference from command definitions to handler arguments. Zod schemas provide runtime validation with compile-time types.
+  </Card>
+  
+  <Card title="Fast development" icon="bolt">
+    Hot-reload development mode, instant startup with Bun, and integrated testing with coverage reports.
+  </Card>
+  
+  <Card title="Rich UIs" icon="sparkles">
+    Build interactive terminal UIs with React components, progress bars, spinners, and prompts powered by OpenTUI.
+  </Card>
+  
+  <Card title="Plugin ecosystem" icon="puzzle-piece">
+    Extensible plugin system with typed stores for AI detection, config management, shell completions, and more.
+  </Card>
+</CardGroup>
+
+## Quick example
+
+Here's a simple CLI with type-safe options and a React-based TUI:
+
+```typescript cli.ts
+import { createCLI, defineCommand, option } from '@bunli/core'
+import { ProgressBar } from '@bunli/tui'
+import { z } from 'zod'
+
+const greetCommand = defineCommand({
+  name: 'greet',
+  description: 'Greet someone with style',
+  options: {
+    name: option(
+      z.string().default('world'),
+      { short: 'n', description: 'Who to greet' }
+    ),
+    loud: option(
+      z.coerce.boolean().default(false),
+      { short: 'l', description: 'Shout the greeting' }
+    )
+  },
+  handler: async ({ flags, colors }) => {
+    const greeting = `Hello, ${flags.name}!`
+    const message = flags.loud ? greeting.toUpperCase() : greeting
+    console.log(colors.cyan(message))
+  }
+})
+
+const cli = await createCLI()
+cli.command(greetCommand)
+await cli.run()
+```
+
+```bash
+# Run your CLI
+bun cli.ts greet --name Alice --loud
+# Output: HELLO, ALICE!
+```
+
+<Tip>
+Flags are automatically typed based on your Zod schemas. TypeScript knows that `flags.name` is a string and `flags.loud` is a boolean.
+</Tip>
+
+## What's included
+
+Bunli is organized as a monorepo with focused packages:
+
+**Core packages:**
+- `@bunli/core` - Framework with command definitions and plugin system
+- `@bunli/tui` - Terminal UI components and hooks
+- `@bunli/utils` - Colors, validation, and utilities
+- `@bunli/runtime` - Prompt and renderer runtime
+- `@bunli/test` - Testing utilities for CLI applications
+
+**CLI toolchain:**
+- `bunli` - Development CLI with build, dev, test commands
+- `create-bunli` - Scaffolding tool for new projects
+- `@bunli/generator` - TypeScript type generation from commands
+
+**Official plugins:**
+- `@bunli/plugin-ai-detect` - Detect AI coding assistants
+- `@bunli/plugin-completions` - Generate shell completions
+- `@bunli/plugin-config` - Configuration file loading
+- `@bunli/plugin-mcp` - MCP integration for agentic workflows
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first CLI in 5 minutes
+  </Card>
+  
+  <Card title="Why Bunli?" icon="question" href="/why-bunli">
+    Learn what makes Bunli different
+  </Card>
+  
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand how Bunli works
+  </Card>
+  
+  <Card title="Commands" icon="terminal" href="/commands">
+    Define type-safe commands
+  </Card>
+</CardGroup>

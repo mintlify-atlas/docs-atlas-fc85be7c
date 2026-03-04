@@ -1,122 +1,162 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Bunli",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#040404",
+    "light": "#040404",
+    "dark": "#040404"
   },
-  "favicon": "/favicon.svg",
+
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/AryaLabsHQ/bunli"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/AryaLabsHQ/bunli"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Overview",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "why-bunli",
+              "architecture"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Getting Started",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "getting-started/installation",
+              "getting-started/quickstart",
+              "getting-started/your-first-cli"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "concepts/commands",
+              "concepts/options",
+              "concepts/handlers",
+              "concepts/configuration",
+              "concepts/error-handling"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Building CLIs",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "guides/defining-commands",
+              "guides/working-with-options",
+              "guides/command-groups",
+              "guides/global-flags",
+              "guides/type-generation",
+              "guides/building-binaries"
+            ]
+          },
+          {
+            "group": "Terminal UI",
+            "pages": [
+              "tui/overview",
+              "tui/prompts",
+              "tui/rendering",
+              "tui/components",
+              "tui/interactive-uis"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
+              "plugins/overview",
+              "plugins/creating-plugins",
+              "plugins/plugin-hooks",
+              "plugins/plugin-store",
+              "plugins/ai-detect",
+              "plugins/completions",
+              "plugins/config",
+              "plugins/mcp"
+            ]
+          },
+          {
+            "group": "Toolchain",
+            "pages": [
+              "toolchain/bunli-cli",
+              "toolchain/dev-mode",
+              "toolchain/testing",
+              "toolchain/building",
+              "toolchain/releasing"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core",
             "pages": [
-              "api-reference/introduction"
+              "api/core/create-cli",
+              "api/core/define-command",
+              "api/core/option",
+              "api/core/define-config",
+              "api/core/load-config"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Plugin System",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/plugins/create-plugin",
+              "api/plugins/plugin-types",
+              "api/plugins/plugin-context"
+            ]
+          },
+          {
+            "group": "Runtime",
+            "pages": [
+              "api/runtime/renderer",
+              "api/runtime/prompt",
+              "api/runtime/events"
+            ]
+          },
+          {
+            "group": "TUI Components",
+            "pages": [
+              "api/tui/hooks",
+              "api/tui/components",
+              "api/tui/styling"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utils/validation",
+              "api/utils/errors",
+              "api/utils/type-helpers"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Example Projects",
+            "pages": [
+              "examples/hello-world",
+              "examples/git-tool",
+              "examples/task-runner",
+              "examples/dev-server"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

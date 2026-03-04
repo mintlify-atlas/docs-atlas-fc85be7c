@@ -1,0 +1,466 @@
+---
+title: 'Type Helpers'
+description: 'Advanced TypeScript type utilities for Bunli'
+---
+
+## Overview
+
+Bunli includes a collection of advanced TypeScript type utilities inspired by TanStack Router. These utilities enable complex type manipulations, type inference, and type safety throughout the framework.
+
+Location: `packages/core/src/utils/type-helpers.ts`
+
+## Union and Intersection Types
+
+### `UnionToIntersection<T>`
+
+Converts a union type to an intersection type.
+
+```typescript
+export type UnionToIntersection<T> = (
+  T extends any ? (arg: T) => any : never
+) extends (arg: infer T) => any
+  ? T
+  : never
+```
+
+**Example:**
+
+```typescript
+import type { UnionToIntersection } from '@bunli/core'
+
+type A = { a: string }
+type B = { b: number }
+type C = { c: boolean }
+
+type Union = A | B | C
+type Intersection = UnionToIntersection<Union>
+// Result: { a: string } & { b: number } & { c: boolean }
+```
+
+## Constraint Types
+
+### `Constrain<T, TConstraint, TDefault>`
+
+Constrains a type to a specific constraint, with optional default fallback.
+
+```typescript
+export type Constrain<T, TConstraint, TDefault = TConstraint> =
+  | (T extends TConstraint ? T : never)
+  | TDefault
+```
+
+**Example:**
+
+```typescript
+import type { Constrain } from '@bunli/core'
+
+type NumberOrDefault = Constrain<any, number, 0>
+// If any is assignable to number, use it; otherwise use 0
+```
+
+## Property Selection
+
+### `PickRequired<T>`
+
+Picks only required (non-optional) properties from a type.
+
+```typescript
+export type PickRequired<T> = {
+  [K in keyof T as undefined extends T[K] ? never : K]: T[K]
+}
+```
+
+**Example:**
+
+```typescript
+import type { PickRequired } from '@bunli/core'
+
+interface User {
+  id: string
+  name: string
+  email?: string
+  phone?: string
+}
+
+type RequiredUserProps = PickRequired<User>
+// Result: { id: string; name: string }
+```
+
+### `PickOptional<T>`
+
+Picks only optional properties from a type.
+
+```typescript
+export type PickOptional<T> = {
+  [K in keyof T as undefined extends T[K] ? K : never]: T[K]
+}
+```
+
+**Example:**
+
+```typescript
+import type { PickOptional } from '@bunli/core'
+
+interface User {
+  id: string
+  name: string
+  email?: string
+  phone?: string
+}
+
+type OptionalUserProps = PickOptional<User>
+// Result: { email?: string; phone?: string }
+```
+
+### `PickAsRequired<TValue, TKey>`
+
+Converts specified optional properties to required.
+
+```typescript
+export type PickAsRequired<TValue, TKey extends keyof TValue> = 
+  Omit<TValue, TKey> & Required<Pick<TValue, TKey>>
+```
+
+**Example:**
+
+```typescript
+import type { PickAsRequired } from '@bunli/core'
+
+interface Config {
+  name: string
+  port?: number
+  host?: string
+}
+
+type ServerConfig = PickAsRequired<Config, 'port' | 'host'>
+// Result: { name: string; port: number; host: string }
+```
+
+## Primitive and Object Extraction
+
+### `ExtractPrimitives<TUnion>`
+
+Extracts primitive types from a union.
+
+```typescript
+export type ExtractPrimitives<TUnion> = 
+  TUnion extends MergeAllPrimitive
+    ? TUnion
+    : TUnion extends object
+      ? never
+      : TUnion
+```
+
+**Example:**
+
+```typescript
+import type { ExtractPrimitives } from '@bunli/core'
+
+type Mixed = string | number | { obj: boolean } | null
+type Primitives = ExtractPrimitives<Mixed>
+// Result: string | number | null
+```
+
+### `ExtractObjects<TUnion>`
+
+Extracts object types from a union.
+
+```typescript
+export type ExtractObjects<TUnion> = 
+  TUnion extends MergeAllPrimitive
+    ? never
+    : TUnion
+```
+
+## Merging Types
+
+### `MergeAll<TUnion>`
+
+Merges all types in a union into a single type.
+
+```typescript
+export type MergeAll<TUnion> =
+  | MergeAllObjects<TUnion>
+  | ExtractPrimitives<TUnion>
+```
+
+**Example:**
+
+```typescript
+import type { MergeAll } from '@bunli/core'
+
+type A = { a: string }
+type B = { b: number }
+type Union = A | B | string
+
+type Merged = MergeAll<Union>
+// Result: { a: string; b: number } | string
+```
+
+### `PartialMergeAll<TUnion>`
+
+Merges types with all properties optional.
+
+```typescript
+export type PartialMergeAll<TUnion> =
+  | ExtractPrimitives<TUnion>
+  | PartialMergeAllObject<TUnion>
+```
+
+### `Assign<TLeft, TRight>`
+
+Assigns properties from right type to left type, similar to `Object.assign()`.
+
+```typescript
+export type Assign<TLeft, TRight> = TLeft extends any
+  ? TRight extends any
+    ? IsNonEmptyObject<TLeft> extends false
+      ? TRight
+      : IsNonEmptyObject<TRight> extends false
+        ? TLeft
+        : keyof TLeft & keyof TRight extends never
+          ? TLeft & TRight
+          : Omit<TLeft, keyof TRight> & TRight
+    : never
+  : never
+```
+
+**Example:**
+
+```typescript
+import type { Assign } from '@bunli/core'
+
+type Base = { a: string; b: number }
+type Override = { b: string; c: boolean }
+
+type Result = Assign<Base, Override>
+// Result: { a: string; b: string; c: boolean }
+```
+
+## Type Inference Control
+
+### `NoInfer<T>`
+
+Prevents type inference for a generic parameter.
+
+```typescript
+export type NoInfer<T> = [T][T extends any ? 0 : never]
+```
+
+**Example:**
+
+```typescript
+import type { NoInfer } from '@bunli/core'
+
+function createConfig<T>(defaults: T, overrides: NoInfer<Partial<T>>) {
+  return { ...defaults, ...overrides }
+}
+
+const config = createConfig(
+  { port: 3000, host: 'localhost' },
+  { port: 8080 }  // Inferred from defaults
+)
+```
+
+## Type Checks
+
+### `IsAny<TValue, TYesResult, TNoResult>`
+
+Checks if a type is `any`.
+
+```typescript
+export type IsAny<TValue, TYesResult, TNoResult = TValue> = 
+  1 extends 0 & TValue
+    ? TYesResult
+    : TNoResult
+```
+
+**Example:**
+
+```typescript
+import type { IsAny } from '@bunli/core'
+
+type Result1 = IsAny<any, 'yes', 'no'>  // 'yes'
+type Result2 = IsAny<string, 'yes', 'no'>  // 'no'
+```
+
+### `IsUnion<T>`
+
+Checks if a type is a union type.
+
+```typescript
+export type IsUnion<T, U extends T = T> = (
+  T extends any ? (U extends T ? false : true) : never
+) extends false
+  ? false
+  : true
+```
+
+**Example:**
+
+```typescript
+import type { IsUnion } from '@bunli/core'
+
+type Result1 = IsUnion<string | number>  // true
+type Result2 = IsUnion<string>  // false
+```
+
+### `IsNonEmptyObject<T>`
+
+Checks if a type is a non-empty object.
+
+```typescript
+export type IsNonEmptyObject<T> = T extends object
+  ? keyof T extends never
+    ? false
+    : true
+  : false
+```
+
+**Example:**
+
+```typescript
+import type { IsNonEmptyObject } from '@bunli/core'
+
+type Result1 = IsNonEmptyObject<{ a: string }>  // true
+type Result2 = IsNonEmptyObject<{}>  // false
+type Result3 = IsNonEmptyObject<string>  // false
+```
+
+## Utility Types
+
+### `WithoutEmpty<T>`
+
+Removes empty object types from a union.
+
+```typescript
+export type WithoutEmpty<T> = T extends any 
+  ? ({} extends T ? never : T) 
+  : never
+```
+
+**Example:**
+
+```typescript
+import type { WithoutEmpty } from '@bunli/core'
+
+type Mixed = { a: string } | {} | { b: number }
+type NonEmpty = WithoutEmpty<Mixed>
+// Result: { a: string } | { b: number }
+```
+
+### `Expand<T>`
+
+Expands a type for better IntelliSense display.
+
+```typescript
+export type Expand<T> = T extends object
+  ? T extends infer O
+    ? O extends Function
+      ? O
+      : { [K in keyof O]: O[K] }
+    : never
+  : T
+```
+
+**Example:**
+
+```typescript
+import type { Expand } from '@bunli/core'
+
+type Collapsed = { a: string } & { b: number }
+type Expanded = Expand<Collapsed>
+// IntelliSense shows: { a: string; b: number }
+```
+
+### `DeepPartial<T>`
+
+Makes all properties and nested properties optional.
+
+```typescript
+export type DeepPartial<T> = T extends object
+  ? {
+      [P in keyof T]?: DeepPartial<T[P]>
+    }
+  : T
+```
+
+**Example:**
+
+```typescript
+import type { DeepPartial } from '@bunli/core'
+
+interface Config {
+  server: {
+    port: number
+    host: string
+  }
+  database: {
+    url: string
+  }
+}
+
+type PartialConfig = DeepPartial<Config>
+// Result:
+// {
+//   server?: { port?: number; host?: string }
+//   database?: { url?: string }
+// }
+```
+
+## Advanced Patterns
+
+### `MakeDifferenceOptional<TLeft, TRight>`
+
+Makes properties that exist in both types optional in the right type.
+
+```typescript
+export type MakeDifferenceOptional<TLeft, TRight> = 
+  keyof TLeft & keyof TRight extends never
+    ? TRight
+    : Omit<TRight, keyof TLeft & keyof TRight> & {
+        [K in keyof TLeft & keyof TRight]?: TRight[K]
+      }
+```
+
+### `IntersectAssign<TLeft, TRight>`
+
+Assigns properties using intersection instead of overwrite.
+
+```typescript
+export type IntersectAssign<TLeft, TRight> = TLeft extends any
+  ? TRight extends any
+    ? IsNonEmptyObject<TLeft> extends false
+      ? TRight
+      : IsNonEmptyObject<TRight> extends false
+        ? TLeft
+        : TRight & TLeft
+    : never
+  : never
+```
+
+## Usage in Bunli
+
+These type helpers are used internally throughout Bunli for:
+
+- **Plugin store merging**: Combining multiple plugin stores with `MergeAll`
+- **Type inference**: Using `NoInfer` to control generic inference
+- **Command options**: Using `PickRequired` and `PickOptional` for option types
+- **Configuration**: Using `DeepPartial` for config overrides
+
+**Example from plugin system:**
+
+```typescript
+import type { MergeAll } from '@bunli/core'
+
+type MergeStores<TPlugins extends readonly BunliPlugin[]> = 
+  MergeAll<TPlugins[number]['store']>
+
+// Automatically merges all plugin stores into one type
+```
+
+## See Also
+
+- [Plugin API](/api/plugin) - Plugin system using these type helpers
+- [Command API](/api/command) - Command types and inference
+- [TypeScript Handbook](https://www.typescriptlang.org/docs/handbook/2/types-from-types.html) - Advanced type manipulation

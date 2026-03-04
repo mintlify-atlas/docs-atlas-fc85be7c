@@ -1,0 +1,197 @@
+---
+title: 'createCLI'
+description: 'Create a new CLI instance with configuration and plugins'
+---
+
+## Function signature
+
+```typescript packages/core/src/cli.ts
+export async function createCLI<
+  TPlugins extends readonly BunliPlugin[] = []
+>(
+  configOverride?: BunliConfigInput & {
+    plugins?: TPlugins 
+    generated?: string | boolean
+  },
+  runtimeDeps: CreateCLIRuntimeDeps = {}
+): Promise<CLI<MergeStores<TPlugins>>>
+```
+
+Creates a CLI instance that manages commands, configuration, and plugins. The function auto-loads configuration from `bunli.config.ts`, applies defaults, and initializes the plugin system.
+
+## Parameters
+
+<ParamField path="configOverride" type="BunliConfigInput & { plugins?: TPlugins; generated?: string | boolean }">
+  Optional configuration to override or merge with loaded config. If no config file exists, `name` and `version` are required.
+
+  <Expandable title="properties">
+    <ResponseField name="name" type="string">
+      CLI application name (required if no config file)
+    </ResponseField>
+    <ResponseField name="version" type="string">
+      CLI application version (required if no config file)
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      CLI application description
+    </ResponseField>
+    <ResponseField name="plugins" type="BunliPlugin[]">
+      Array of plugins to load
+    </ResponseField>
+    <ResponseField name="generated" type="string | boolean">
+      Path to generated types or boolean to enable/disable (defaults to `./.bunli/commands.gen.ts`)
+    </ResponseField>
+    <ResponseField name="commands" type="object">
+      Commands configuration
+    </ResponseField>
+    <ResponseField name="build" type="object">
+      Build configuration
+    </ResponseField>
+    <ResponseField name="dev" type="object">
+      Development configuration
+    </ResponseField>
+    <ResponseField name="test" type="object">
+      Test configuration
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="runtimeDeps" type="CreateCLIRuntimeDeps" default="{}">
+  Internal runtime dependencies for testing and customization.
+
+  <Expandable title="properties">
+    <ResponseField name="createPromptSession" type="function">
+      Custom prompt session factory
+    </ResponseField>
+    <ResponseField name="runTuiRender" type="function">
+      Custom TUI render function
+    </ResponseField>
+    <ResponseField name="getTerminalInfo" type="function">
+      Custom terminal info provider
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## Return value
+
+<ResponseField name="CLI" type="CLI<MergeStores<TPlugins>>">
+  A CLI instance with methods to register commands and execute the CLI.
+
+  <Expandable title="properties">
+    <ResponseField name="command" type="function">
+      Register a command with the CLI
+    </ResponseField>
+    <ResponseField name="init" type="function">
+      Initialize the CLI (kept for lifecycle symmetry, currently a no-op)
+    </ResponseField>
+    <ResponseField name="run" type="function">
+      Run the CLI with the given arguments (defaults to `process.argv.slice(2)`)
+    </ResponseField>
+    <ResponseField name="execute" type="function">
+      Execute a command programmatically with type-safe options
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Configuration loading
+
+The function automatically searches for configuration files in this order:
+
+1. `bunli.config.ts`
+2. `bunli.config.js`
+3. `bunli.config.mjs`
+
+If a config file is found, it's loaded and merged with `configOverride`. If no config file exists and `configOverride` doesn't provide `name` and `version`, an error is thrown.
+
+## Generated types
+
+The function attempts to load generated types from `./.bunli/commands.gen.ts`. This enables type-safe command execution via the `execute()` method.
+
+## Error handling
+
+<ResponseField name="InvalidConfigError" type="TaggedError">
+  Thrown when configuration validation fails
+  
+  <Expandable title="properties">
+    <ResponseField name="message" type="string">
+      Error message with validation details
+    </ResponseField>
+    <ResponseField name="cause" type="unknown">
+      Original Zod validation error
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Examples
+
+### Basic usage with config file
+
+```typescript
+import { createCLI } from '@bunli/core'
+
+const cli = await createCLI()
+
+// Register commands
+cli.command(myCommand)
+
+// Run the CLI
+await cli.run()
+```
+
+### Usage without config file
+
+```typescript
+import { createCLI } from '@bunli/core'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  version: '1.0.0',
+  description: 'My awesome CLI tool'
+})
+
+cli.command(myCommand)
+await cli.run()
+```
+
+### With plugins
+
+```typescript
+import { createCLI } from '@bunli/core'
+import { completionsPlugin } from '@bunli/plugin-completions'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  version: '1.0.0',
+  plugins: [completionsPlugin()]
+})
+
+cli.command(myCommand)
+await cli.run()
+```
+
+### Programmatic execution
+
+```typescript
+import { createCLI } from '@bunli/core'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  version: '1.0.0'
+})
+
+cli.command(myCommand)
+
+// Execute a command programmatically
+await cli.execute('my-command', ['arg1', 'arg2'])
+
+// Execute with options
+await cli.execute('my-command', { verbose: true, output: 'json' })
+
+// Execute with both args and options
+await cli.execute('my-command', ['arg1'], { verbose: true })
+```
+
+## Related
+
+- [defineCommand](/api/core/define-command) - Define commands to register with the CLI
+- [defineConfig](/api/core/define-config) - Define configuration with type safety
+- [loadConfig](/api/core/load-config) - Load configuration from files

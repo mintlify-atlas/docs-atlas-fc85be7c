@@ -1,0 +1,432 @@
+---
+title: 'Hello World'
+description: 'The simplest Bunli CLI - perfect for learning the basics'
+---
+
+## Overview
+
+The Hello World example is the absolute simplest Bunli CLI. It demonstrates basic command structure, options, validation, and both TUI and handler-based execution. Perfect for understanding Bunli fundamentals in under 5 minutes.
+
+**Location:** `examples/hello-world/`
+
+## Quick Start
+
+```bash
+cd examples/hello-world
+bun install
+
+# Run commands
+bun cli.ts greet --name "World" --loud
+bun cli.ts password-prompt
+bun cli.ts password
+bun cli.ts showcase
+
+# With short flags
+bun cli.ts greet -n "Bunli" -l -t 3
+```
+
+## Project Structure
+
+```
+hello-world/
+├── cli.ts              # CLI entry point
+├── commands/           # Command definitions
+│   ├── greet.tsx       # Basic greeting command
+│   ├── password.tsx    # Password input demo
+│   ├── password-prompt.ts  # Standard-buffer password
+│   └── showcase.tsx    # Component showcase
+├── bunli.config.ts     # Configuration
+├── package.json        # Dependencies
+└── README.md          # Documentation
+```
+
+## Commands
+
+### `greet` - Basic Greeting
+
+A minimal command demonstrating core Bunli concepts.
+
+**Source:** `commands/greet.tsx`
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+const greetCommand = defineCommand({
+  name: 'greet' as const,
+  description: 'A minimal greeting CLI',
+  options: {
+    // Simple string with default
+    name: option(
+      z.string().default('world'),
+      { short: 'n', description: 'Who to greet' }
+    ),
+    
+    // Boolean with short flag
+    loud: option(
+      z.coerce.boolean().default(false),
+      { short: 'l', description: 'Shout the greeting' }
+    ),
+    
+    // Number with validation
+    times: option(
+      z.coerce.number().int().positive().default(1),
+      { short: 't', description: 'Number of times to greet' }
+    )
+  },
+  render: ({ flags }) => (
+    <GreetProgress
+      name={String(flags.name)}
+      loud={Boolean(flags.loud)}
+      times={Number(flags.times)}
+    />
+  ),
+  handler: async ({ flags, colors }) => {
+    const greeting = `Hello, ${flags.name}!`
+    const message = flags.loud ? greeting.toUpperCase() : greeting
+    
+    for (let i = 0; i < flags.times; i++) {
+      console.log(colors.cyan(message))
+    }
+  }
+})
+```
+
+**TUI Component:**
+
+```typescript
+function GreetProgress({
+  name,
+  loud,
+  times
+}: {
+  name: string
+  loud: boolean
+  times: number
+}) {
+  const [progress, setProgress] = useState(0)
+  const renderer = useRenderer()
+
+  useKeyboard((key) => {
+    if (key.name === 'q' || key.name === 'escape') {
+      renderer.destroy()
+    }
+  })
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setProgress((current) => {
+        if (current >= 100) return 100
+        return current + 5
+      })
+    }, 80)
+    return () => clearInterval(interval)
+  }, [])
+
+  const greeting = `Hello, ${name}!`
+  const message = loud ? greeting.toUpperCase() : greeting
+
+  return (
+    <ProgressBar
+      value={progress}
+      label={`${message} x${times}  (press q to quit, auto-exits at 100%)`}
+      color={loud ? '#f97316' : '#22c55e'}
+    />
+  )
+}
+```
+
+**Usage:**
+
+```bash
+# Basic greeting
+bun cli.ts greet --name Alice
+
+# Loud greeting
+bun cli.ts greet -n Bob -l
+
+# Repeat greeting
+bun cli.ts greet -n Carol -t 3
+
+# All options
+bun cli.ts greet --name "Developer" --loud --times 2
+```
+
+### `password` - Password Input Demo
+
+Demonstrates the `PasswordField` component with form validation.
+
+**Source:** `commands/password.tsx`
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import {
+  Form,
+  Input,
+  PasswordField,
+  Card,
+  Container,
+  ThemeProvider
+} from '@bunli/tui/interactive'
+import { z } from 'zod'
+
+const credentialsSchema = z.object({
+  username: z.string().min(2, 'Username must be at least 2 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters')
+})
+
+function PasswordScreen({ theme }: { theme: 'dark' | 'light' }) {
+  const [status, setStatus] = useState('Fill both fields and press Enter')
+
+  return (
+    <ThemeProvider theme={theme}>
+      <Container border padding={1}>
+        <Card title='Credentials Form' tone='accent'>
+          <Form
+            schema={credentialsSchema}
+            onSubmit={(values) => {
+              setStatus(`Submitted credentials for ${values.username}`)
+            }}
+          >
+            <Input
+              name='username'
+              label='Username'
+              required
+              placeholder='deploy-bot'
+            />
+            <PasswordField
+              name='password'
+              label='Password / Token'
+              required
+              placeholder='Enter at least 8 characters'
+            />
+          </Form>
+        </Card>
+      </Container>
+    </ThemeProvider>
+  )
+}
+
+const passwordCommand = defineCommand({
+  name: 'password' as const,
+  description: 'Showcase password input components',
+  options: {
+    theme: option(z.enum(['dark', 'light']).default('dark'), {
+      short: 'm',
+      description: 'Theme preset'
+    })
+  },
+  render: ({ flags }) => <PasswordScreen theme={flags.theme} />
+})
+```
+
+**Usage:**
+
+```bash
+bun cli.ts password
+bun cli.ts password --theme light
+```
+
+### `password-prompt` - Standard Buffer Password
+
+Demonstrates password prompting in standard buffer mode.
+
+**Usage:**
+
+```bash
+bun cli.ts password-prompt
+```
+
+### `showcase` - Component Showcase
+
+A comprehensive showcase of `@bunli/tui/interactive` and `@bunli/tui/charts` components.
+
+**Features:**
+- Modal dialogs
+- Confirmation dialogs  
+- Choose dialogs
+- Toast notifications
+- Command palette
+- Menu navigation
+- Data tables
+- Charts (Bar, Line, Sparkline)
+- Tabs
+- Progress indicators
+
+**Controls:**
+- `q` or `Esc`: quit
+- `Tab` / `Shift+Tab`: cycle focus regions
+- `F1`: focus command palette
+- `F2`: focus menu
+- `F3`: focus tabs
+- `F4`: focus data table
+- `F5`: focus viewport
+- `PgUp` / `PgDn`: scroll viewport
+- `Ctrl+M`: toggle modal
+- `Ctrl+Y`: open confirm dialog
+- `Ctrl+P`: open choose dialog
+- `Ctrl+T`: show toast
+
+**Usage:**
+
+```bash
+bun cli.ts showcase
+bun cli.ts showcase --theme light
+```
+
+## Configuration
+
+**Source:** `bunli.config.ts`
+
+```typescript
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'hello-world',
+  version: '1.0.0',
+  description: 'Hello World - Simplest possible Bunli CLI',
+  
+  plugins: [],
+  commands: {
+    entry: './cli.ts',
+    directory: './commands'
+  },
+  build: {
+    entry: './cli.ts',
+    outdir: './dist',
+    targets: [],
+    compress: false,
+    minify: true,
+    sourcemap: true
+  },
+  tui: {
+    renderer: {
+      bufferMode: 'alternate'  // Fullscreen mode
+    }
+  }
+})
+```
+
+## CLI Entry Point
+
+**Source:** `cli.ts`
+
+```typescript
+#!/usr/bin/env bun
+import { createCLI } from '@bunli/core'
+import greetCommand from './commands/greet.js'
+import passwordCommand from './commands/password.js'
+import passwordPromptCommand from './commands/password-prompt.js'
+import showcaseCommand from './commands/showcase.js'
+
+const cli = await createCLI()
+
+cli.command(greetCommand)
+cli.command(passwordCommand)
+cli.command(passwordPromptCommand)
+cli.command(showcaseCommand)
+await cli.run()
+```
+
+## Key Concepts
+
+### 1. Command Definition
+
+Use `defineCommand` to create a command with options and handlers:
+
+```typescript
+const command = defineCommand({
+  name: 'command-name',
+  description: 'Command description',
+  options: { /* ... */ },
+  handler: async ({ flags, colors }) => { /* ... */ }
+})
+```
+
+### 2. Option Schemas
+
+Wrap Zod schemas with `option()` for CLI metadata:
+
+```typescript
+import { option } from '@bunli/core'
+import { z } from 'zod'
+
+name: option(
+  z.string().min(2),
+  { short: 'n', description: 'Your name' }
+)
+```
+
+### 3. Type Coercion
+
+Use `z.coerce` to convert CLI string inputs:
+
+```typescript
+// String "true" → boolean true
+loud: option(z.coerce.boolean().default(false))
+
+// String "3000" → number 3000
+port: option(z.coerce.number().int().min(1000))
+```
+
+### 4. Command Composition
+
+Commands can provide both `render` and `handler`:
+- `render`: TUI component (alternate buffer)
+- `handler`: Standard CLI output (standard buffer)
+
+### 5. Buffer Modes
+
+**Alternate Buffer Mode:**
+- Fullscreen TUI rendering
+- Configured globally or per-command
+- No terminal history pollution
+
+**Standard Buffer Mode:**
+- Regular CLI output
+- Appears in terminal history
+- Default for handler-only commands
+
+## Development Workflow
+
+```bash
+# Install dependencies
+bun install
+
+# Generate types
+bun run generate
+
+# Development with hot reload
+bun run dev greet --name Developer
+
+# Build for production
+bun run build
+
+# Run built executable
+./dist/cli greet --name "Production User" --loud
+```
+
+## What You Learned
+
+- ✅ Creating commands with `defineCommand`
+- ✅ Defining options with Zod schemas
+- ✅ Type coercion with `z.coerce`
+- ✅ Using short flags
+- ✅ Accessing command context (`flags`, `colors`, etc.)
+- ✅ Building TUI components with React
+- ✅ Buffer mode configuration
+- ✅ Command registration
+
+## Next Steps
+
+Ready for more? Check out these examples:
+
+- **[Task Runner](/examples/task-runner)** - Complex validation and interactive prompts
+- **[Git Tool](/examples/git-tool)** - External tool integration and command organization  
+- **[Dev Server](/examples/dev-server)** - Plugin system and configuration management
+
+## Source Code
+
+View the complete source code on GitHub:
+
+[examples/hello-world](https://github.com/bunlijs/bunli/tree/main/examples/hello-world)

@@ -1,0 +1,376 @@
+---
+title: "Events"
+description: "Runtime event system and transport"
+---
+
+## Overview
+
+The events module provides a type-safe event system for Bunli runtime lifecycle events. Events are emitted through a transport interface and validated with Zod schemas.
+
+## Imports
+
+```typescript
+import {
+  emitRuntimeEvent,
+  type RuntimeEvent,
+  type RuntimeTransport,
+  type RuntimeTransportObserver
+} from '@bunli/runtime'
+```
+
+## Event Types
+
+All runtime events follow a discriminated union pattern with a `type` field.
+
+### RuntimeRendererStartedEvent
+
+Emitted when the renderer starts.
+
+<ResponseField name="type" type="'runtime.renderer.started'" required>
+  Event type discriminator
+</ResponseField>
+
+<ResponseField name="timestamp" type="number" required>
+  Unix timestamp in milliseconds when event occurred
+</ResponseField>
+
+<ResponseField name="bufferMode" type="'alternate' | 'standard'">
+  Active terminal buffer mode
+</ResponseField>
+
+### RuntimeRendererDestroyedEvent
+
+Emitted when the renderer is destroyed.
+
+<ResponseField name="type" type="'runtime.renderer.destroyed'" required>
+  Event type discriminator
+</ResponseField>
+
+<ResponseField name="timestamp" type="number" required>
+  Unix timestamp in milliseconds when event occurred
+</ResponseField>
+
+### RuntimeRendererMissingRenderEvent
+
+Emitted when a required render function is missing.
+
+<ResponseField name="type" type="'runtime.renderer.missing-render'" required>
+  Event type discriminator
+</ResponseField>
+
+<ResponseField name="timestamp" type="number" required>
+  Unix timestamp in milliseconds when event occurred
+</ResponseField>
+
+### RuntimePromptStartedEvent
+
+Emitted when a prompt is started.
+
+<ResponseField name="type" type="'runtime.prompt.started'" required>
+  Event type discriminator
+</ResponseField>
+
+<ResponseField name="timestamp" type="number" required>
+  Unix timestamp in milliseconds when event occurred
+</ResponseField>
+
+<ResponseField name="promptType" type="'text' | 'password' | 'confirm' | 'select' | 'multiselect' | 'group' | 'session'" required>
+  Type of prompt that was started
+</ResponseField>
+
+### RuntimePromptCancelledEvent
+
+Emitted when a prompt is cancelled.
+
+<ResponseField name="type" type="'runtime.prompt.cancelled'" required>
+  Event type discriminator
+</ResponseField>
+
+<ResponseField name="timestamp" type="number" required>
+  Unix timestamp in milliseconds when event occurred
+</ResponseField>
+
+<ResponseField name="promptType" type="'text' | 'password' | 'confirm' | 'select' | 'multiselect' | 'group' | 'session'" required>
+  Type of prompt that was cancelled
+</ResponseField>
+
+### RuntimeTransportErrorEvent
+
+Emitted when a transport error occurs.
+
+<ResponseField name="type" type="'runtime.transport.error'" required>
+  Event type discriminator
+</ResponseField>
+
+<ResponseField name="timestamp" type="number" required>
+  Unix timestamp in milliseconds when event occurred
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Error message describing what went wrong
+</ResponseField>
+
+## Transport Interface
+
+Implement the `RuntimeTransport` interface to receive runtime events.
+
+```typescript
+interface RuntimeTransport {
+  send(event: RuntimeEvent): void | Promise<void>
+}
+```
+
+### Example Transport
+
+```typescript
+import type { RuntimeTransport, RuntimeEvent } from '@bunli/runtime'
+
+class LoggingTransport implements RuntimeTransport {
+  send(event: RuntimeEvent): void {
+    console.log(`[${event.type}]`, event)
+  }
+}
+
+// Use with renderer
+import { runTuiRender } from '@bunli/runtime/renderer'
+
+const transport = new LoggingTransport()
+
+await runTuiRender({
+  command: {
+    render: () => <App />
+  },
+  transport
+})
+```
+
+### File Transport Example
+
+```typescript
+import { writeFile, appendFile } from 'node:fs/promises'
+import type { RuntimeTransport, RuntimeEvent } from '@bunli/runtime'
+
+class FileTransport implements RuntimeTransport {
+  constructor(private logPath: string) {}
+
+  async send(event: RuntimeEvent): Promise<void> {
+    const line = JSON.stringify(event) + '\n'
+    await appendFile(this.logPath, line, 'utf-8')
+  }
+}
+```
+
+### HTTP Transport Example
+
+```typescript
+import type { RuntimeTransport, RuntimeEvent } from '@bunli/runtime'
+
+class HTTPTransport implements RuntimeTransport {
+  constructor(private endpoint: string) {}
+
+  async send(event: RuntimeEvent): Promise<void> {
+    await fetch(this.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event)
+    })
+  }
+}
+```
+
+## emitRuntimeEvent
+
+Utility function to emit events through a transport with validation and error handling.
+
+```typescript
+async function emitRuntimeEvent(
+  transport: RuntimeTransport | undefined,
+  event: RuntimeEvent,
+  observer?: RuntimeTransportObserver
+): Promise<void>
+```
+
+### Parameters
+
+<ParamField path="transport" type="RuntimeTransport | undefined">
+  Transport to send event through. If undefined, event is not sent.
+</ParamField>
+
+<ParamField path="event" type="RuntimeEvent" required>
+  Event to emit. Will be validated against event schema.
+</ParamField>
+
+<ParamField path="observer" type="RuntimeTransportObserver">
+  Optional observer for transport errors
+  
+  <Expandable title="properties">
+    <ParamField path="onTransportError" type="(error: unknown, event: RuntimeEvent) => void">
+      Called when transport fails or validation fails
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Example
+
+```typescript
+import { emitRuntimeEvent } from '@bunli/runtime'
+import type { RuntimeTransport } from '@bunli/runtime'
+
+const transport: RuntimeTransport = {
+  send: async (event) => {
+    console.log('Event:', event)
+  }
+}
+
+// Emit event with error handling
+await emitRuntimeEvent(
+  transport,
+  {
+    type: 'runtime.renderer.started',
+    timestamp: Date.now(),
+    bufferMode: 'alternate'
+  },
+  {
+    onTransportError: (error, event) => {
+      console.error('Failed to send event:', event.type, error)
+    }
+  }
+)
+```
+
+## Transport Observer
+
+Provide a `RuntimeTransportObserver` to handle transport errors.
+
+```typescript
+interface RuntimeTransportObserver {
+  onTransportError?(error: unknown, event: RuntimeEvent): void
+}
+```
+
+### Example
+
+```typescript
+import { emitRuntimeEvent } from '@bunli/runtime'
+
+const observer = {
+  onTransportError(error: unknown, event: RuntimeEvent) {
+    // Log to error tracking service
+    logger.error('Transport error', {
+      eventType: event.type,
+      error
+    })
+  }
+}
+
+// Use observer
+await emitRuntimeEvent(transport, event, observer)
+```
+
+## Event Schemas
+
+All events are validated using Zod schemas. You can import schemas directly:
+
+```typescript
+import {
+  RuntimeEventSchema,
+  RuntimeRendererStartedEventSchema,
+  RuntimeRendererDestroyedEventSchema,
+  RuntimeRendererMissingRenderEventSchema,
+  RuntimePromptStartedEventSchema,
+  RuntimePromptCancelledEventSchema,
+  RuntimeTransportErrorEventSchema
+} from '@bunli/runtime/events'
+
+// Validate event
+const result = RuntimeEventSchema.safeParse(unknownEvent)
+if (result.success) {
+  const event: RuntimeEvent = result.data
+}
+```
+
+## Complete Example
+
+```typescript
+import { runTuiRender } from '@bunli/runtime/renderer'
+import type { RuntimeTransport, RuntimeEvent } from '@bunli/runtime'
+import { App } from './app'
+
+// Multi-target transport
+class MultiTransport implements RuntimeTransport {
+  private transports: RuntimeTransport[]
+
+  constructor(...transports: RuntimeTransport[]) {
+    this.transports = transports
+  }
+
+  async send(event: RuntimeEvent): Promise<void> {
+    await Promise.all(
+      this.transports.map(t => t.send(event))
+    )
+  }
+}
+
+// Console transport
+class ConsoleTransport implements RuntimeTransport {
+  send(event: RuntimeEvent): void {
+    const { timestamp, ...rest } = event
+    const time = new Date(timestamp).toISOString()
+    console.log(`[${time}]`, rest)
+  }
+}
+
+// File transport
+import { appendFile } from 'node:fs/promises'
+
+class FileTransport implements RuntimeTransport {
+  constructor(private path: string) {}
+
+  async send(event: RuntimeEvent): Promise<void> {
+    await appendFile(
+      this.path,
+      JSON.stringify(event) + '\n',
+      'utf-8'
+    )
+  }
+}
+
+// Use multiple transports
+const transport = new MultiTransport(
+  new ConsoleTransport(),
+  new FileTransport('./events.log')
+)
+
+await runTuiRender({
+  command: {
+    render: () => <App />
+  },
+  transport
+})
+```
+
+## Best Practices
+
+<Card title="Error Handling" icon="shield">
+  - Always provide a `RuntimeTransportObserver` for production
+  - Handle transport failures gracefully
+  - Don't let transport errors crash your application
+</Card>
+
+<Card title="Performance" icon="gauge">
+  - Use async transports for I/O operations
+  - Batch events if sending to external services
+  - Consider buffering events during high-frequency operations
+</Card>
+
+<Card title="Debugging" icon="bug">
+  - Log all events in development
+  - Filter events by type in production
+  - Include event timestamps for correlation
+</Card>
+
+<Card title="Type Safety" icon="shield-check">
+  - Use discriminated unions to narrow event types
+  - Leverage Zod schemas for runtime validation
+  - Type your transport implementations
+</Card>

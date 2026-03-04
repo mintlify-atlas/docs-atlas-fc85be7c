@@ -1,0 +1,158 @@
+---
+title: Bunli CLI
+description: Overview of the Bunli CLI toolchain for developing, building, and releasing CLI applications
+---
+
+The Bunli CLI is a comprehensive toolchain for developing, building, testing, and releasing CLI applications built with the Bunli framework. It provides a complete development workflow from scaffolding new projects to publishing production-ready binaries.
+
+## Installation
+
+Install the Bunli CLI globally using Bun:
+
+```bash
+bun install -g bunli
+```
+
+Or use it directly with `bunx`:
+
+```bash
+bunx bunli --help
+```
+
+## Available Commands
+
+The Bunli CLI provides the following commands:
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `bunli dev` | `d` | Run your CLI in development mode with hot reload |
+| `bunli build` | `b` | Build your CLI for production |
+| `bunli test` | `t` | Run tests for your CLI |
+| `bunli generate` | `gen` | Generate command type definitions |
+| `bunli release` | `r` | Create a release of your CLI |
+| `bunli init` | `i` | Initialize a new Bunli CLI project |
+| `bunli doctor` | - | Run diagnostics for Bunli projects |
+
+## Global Options
+
+All Bunli commands support the following global options:
+
+- `--help`, `-h` - Show help for a command
+- `--version`, `-v` - Show version information
+
+## Usage Examples
+
+### Quick Start
+
+Create a new Bunli project:
+
+```bash
+bunli init my-cli
+cd my-cli
+```
+
+### Development Workflow
+
+Start development mode with hot reload:
+
+```bash
+bunli dev
+```
+
+Run tests:
+
+```bash
+bunli test
+```
+
+Build for production:
+
+```bash
+bunli build
+```
+
+### Production Release
+
+Create and publish a release:
+
+```bash
+bunli release --version patch
+```
+
+## Command Reference
+
+For detailed information about each command, see the following pages:
+
+- [Development Mode](/toolchain/dev-mode) - Hot reload and development workflow
+- [Testing](/toolchain/testing) - Running and writing tests
+- [Building](/toolchain/building) - Compiling and bundling for production
+- [Releasing](/toolchain/releasing) - Publishing releases to npm and GitHub
+
+## Configuration
+
+The Bunli CLI can be configured using a `bunli.config.ts` file in your project root:
+
+```typescript
+import { defineConfig } from 'bunli'
+
+export default defineConfig({
+  commands: {
+    entry: './src/cli.ts',
+    directory: './src/commands'
+  },
+  build: {
+    entry: './src/cli.ts',
+    outdir: './dist',
+    minify: true,
+    targets: ['all']
+  },
+  dev: {
+    watch: true
+  },
+  test: {
+    pattern: '**/*.test.ts',
+    coverage: false
+  },
+  release: {
+    npm: true,
+    github: true,
+    tagFormat: 'v{{version}}',
+    conventionalCommits: true
+  }
+})
+```
+
+## Package Information
+
+The Bunli CLI is published as the `bunli` package:
+
+- **Package**: `bunli`
+- **Version**: 0.8.0
+- **Binary**: `bunli`
+- **Repository**: [github.com/AryaLabsHQ/bunli](https://github.com/AryaLabsHQ/bunli)
+- **License**: MIT
+
+## Source Code
+
+The CLI implementation can be found at:
+
+```
+packages/cli/src/
+├── cli.ts              # CLI entry point
+├── commands/           # Command implementations
+│   ├── build.ts
+│   ├── dev.ts
+│   ├── test.ts
+│   ├── generate.ts
+│   ├── release.ts
+│   ├── init.ts
+│   └── doctor.ts
+└── utils/             # CLI utilities
+```
+
+## Next Steps
+
+- Learn about [Development Mode](/toolchain/dev-mode) for rapid CLI development
+- Explore [Testing](/toolchain/testing) to write tests for your commands
+- Read about [Building](/toolchain/building) to create production builds
+- Understand [Releasing](/toolchain/releasing) to publish your CLI

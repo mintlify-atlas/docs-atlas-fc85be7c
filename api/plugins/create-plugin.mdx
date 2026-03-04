@@ -1,0 +1,311 @@
+---
+title: createPlugin
+description: Factory function for creating type-safe Bunli plugins with store support
+---
+
+## Overview
+
+The `createPlugin` function is the primary way to create plugins in Bunli. It supports both direct plugins and plugin factories that accept configuration options, with full TypeScript type inference for plugin stores.
+
+## Function Signature
+
+```typescript
+// Plugin factory overload
+function createPlugin<TOptions, TStore = {}>(
+  factory: (options: TOptions) => BunliPlugin<TStore>
+): (options: TOptions) => BunliPlugin<TStore>
+
+// Direct plugin overload
+function createPlugin<TStore = {}>(
+  plugin: BunliPlugin<TStore>
+): BunliPlugin<TStore>
+```
+
+<ParamField path="factory" type="function" optional>
+  A function that receives options and returns a BunliPlugin. Used for plugins that need configuration.
+</ParamField>
+
+<ParamField path="plugin" type="BunliPlugin<TStore>" optional>
+  A direct plugin object without configuration options.
+</ParamField>
+
+<ParamField path="TOptions" type="generic">
+  Type parameter for plugin factory options
+</ParamField>
+
+<ParamField path="TStore" type="generic" default="{}">
+  Type parameter for plugin store shape. Enables type-safe store access in hooks.
+</ParamField>
+
+<ResponseField name="return" type="BunliPlugin<TStore> | PluginFactory<TOptions, TStore>">
+  Returns either a plugin object or a plugin factory function, depending on the input
+</ResponseField>
+
+## Direct Plugin
+
+Create a plugin with explicit store type:
+
+```typescript
+import { createPlugin } from '@bunli/core/plugin'
+
+interface MyStore {
+  count: number
+  message: string
+}
+
+const myPlugin = createPlugin<MyStore>({
+  name: 'my-plugin',
+  store: {
+    count: 0,
+    message: ''
+  },
+  beforeCommand(context) {
+    context.store.count++ // TypeScript knows the type!
+    console.log(`Count: ${context.store.count}`)
+  }
+})
+```
+
+## Plugin Factory
+
+Create a plugin factory that accepts configuration:
+
+```typescript
+import { createPlugin } from '@bunli/core/plugin'
+import type { BunliPlugin } from '@bunli/core/plugin'
+
+interface Options {
+  prefix: string
+  maxCount?: number
+}
+
+interface Store {
+  count: number
+}
+
+const myPlugin = createPlugin<Options, Store>((options) => ({
+  name: 'my-plugin',
+  store: {
+    count: 0
+  },
+  beforeCommand(context) {
+    if (options.maxCount && context.store.count >= options.maxCount) {
+      throw new Error('Max count reached')
+    }
+    console.log(`${options.prefix}: ${context.store.count}`)
+    context.store.count++
+  }
+} satisfies BunliPlugin<Store>))
+
+// Use it in your config
+export default {
+  plugins: [
+    myPlugin({ prefix: 'Hello', maxCount: 10 })
+  ]
+}
+```
+
+## Plugin Configuration
+
+Plugins can define multiple lifecycle hooks:
+
+<ParamField path="name" type="string" required>
+  Unique plugin identifier
+</ParamField>
+
+<ParamField path="version" type="string" optional>
+  Plugin version (semver recommended)
+</ParamField>
+
+<ParamField path="store" type="TStore" optional>
+  Initial store state. Store is merged across all plugins and available in command hooks.
+</ParamField>
+
+<ParamField path="setup" type="function" optional>
+  Called during CLI initialization. Can modify configuration and register commands.
+  
+  ```typescript
+  setup(context: PluginContext): void | Promise<void>
+  ```
+</ParamField>
+
+<ParamField path="configResolved" type="function" optional>
+  Called after configuration is finalized. Config is now immutable.
+  
+  ```typescript
+  configResolved(config: ResolvedConfig): void | Promise<void>
+  ```
+</ParamField>
+
+<ParamField path="beforeCommand" type="function" optional>
+  Called before command execution. Can inject context and validate.
+  
+  ```typescript
+  beforeCommand(context: CommandContext<TStore>): void | Promise<void>
+  ```
+</ParamField>
+
+<ParamField path="afterCommand" type="function" optional>
+  Called after command execution. Receives result or error from command.
+  
+  ```typescript
+  afterCommand(context: CommandContext<TStore> & CommandResult): void | Promise<void>
+  ```
+</ParamField>
+
+## Real-World Example
+
+Here's the config merger plugin from `@bunli/plugin-config`:
+
+```typescript
+import { createPlugin } from '@bunli/core/plugin'
+import { deepMerge } from '@bunli/core/utils'
+import { readFile } from 'fs/promises'
+
+interface ConfigPluginOptions {
+  sources?: string[]
+  mergeStrategy?: 'shallow' | 'deep'
+  stopOnFirst?: boolean
+}
+
+export const configMergerPlugin = createPlugin<ConfigPluginOptions, {}>((
+  options = {}
+) => {
+  const sources = options.sources || [
+    '~/.config/{{name}}/config.json',
+    '.{{name}}rc',
+    '.{{name}}rc.json'
+  ]
+  
+  return {
+    name: '@bunli/plugin-config',
+    version: '1.0.0',
+    
+    async setup(context) {
+      const appName = context.config.name || 'bunli'
+      const configs = []
+      
+      for (const source of sources) {
+        const configPath = source
+          .replace(/^~/, homedir())
+          .replace(/\{\{name\}\}/g, appName)
+        
+        try {
+          const content = await readFile(configPath, 'utf-8')
+          configs.push(JSON.parse(content))
+          context.logger.debug(`Loaded config from ${configPath}`)
+          
+          if (options.stopOnFirst) break
+        } catch (error) {
+          context.logger.debug(`Config not found: ${configPath}`)
+        }
+      }
+      
+      if (configs.length > 0) {
+        const merged = options.mergeStrategy === 'shallow'
+          ? Object.assign({}, ...configs)
+          : deepMerge(...configs)
+        
+        context.updateConfig(merged)
+        context.logger.info(`Merged ${configs.length} config file(s)`)
+      }
+    }
+  }
+})
+```
+
+## Helper Functions
+
+### createTestPlugin
+
+Create a test plugin for development and testing:
+
+```typescript
+function createTestPlugin<TStore = {}>(
+  store: TStore,
+  hooks: Partial<BunliPlugin<TStore>>
+): BunliPlugin<TStore>
+```
+
+**Example:**
+
+```typescript
+import { createTestPlugin } from '@bunli/core/plugin'
+
+const testPlugin = createTestPlugin(
+  { count: 0, message: '' },
+  {
+    beforeCommand(context) {
+      context.store.count++
+      console.log(`Count: ${context.store.count}`)
+    }
+  }
+)
+```
+
+### composePlugins
+
+Compose multiple plugins into a single plugin:
+
+```typescript
+function composePlugins<T extends BunliPlugin[]>(
+  ...plugins: T
+): BunliPlugin<MergeStores<T>>
+```
+
+**Example:**
+
+```typescript
+import { composePlugins } from '@bunli/core/plugin'
+
+const composedPlugin = composePlugins(
+  authPlugin({ provider: 'github' }),
+  loggingPlugin({ level: 'debug' }),
+  metricsPlugin({ enabled: true })
+)
+
+export default {
+  plugins: [composedPlugin]
+}
+```
+
+## Type Helpers
+
+### InferPluginOptions
+
+Extract options type from a plugin factory:
+
+```typescript
+type InferPluginOptions<T> = T extends PluginFactory<infer O, any> ? O : never
+
+// Example
+type Options = InferPluginOptions<typeof myPlugin>
+```
+
+### InferPluginStore
+
+Extract store type from a plugin:
+
+```typescript
+type InferPluginStore<T> = T extends BunliPlugin<infer S> ? S 
+  : T extends PluginFactory<any, infer S> ? S 
+  : {}
+
+// Example
+type Store = InferPluginStore<typeof myPlugin>
+```
+
+## Best Practices
+
+1. **Always type your store**: Use generics to ensure type-safe store access
+2. **Use satisfies**: Add `satisfies BunliPlugin<TStore>` to plugin objects for better type checking
+3. **Plugin naming**: Use namespaced names like `@scope/plugin-name`
+4. **Validate options**: Use Zod or similar for runtime option validation
+5. **Handle errors**: Use `better-result` for error handling in async operations
+6. **Document hooks**: Clearly document which hooks your plugin implements
+
+## Related
+
+- [Plugin Types](/api/plugins/plugin-types)
+- [Plugin Context](/api/plugins/plugin-context)
+- [Better Result](https://better-result.js.org/) for error handling

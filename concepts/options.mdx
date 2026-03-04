@@ -1,0 +1,534 @@
+---
+title: Options
+description: Define type-safe command options with validation and automatic type inference
+---
+
+Options (also called flags or arguments) allow users to customize command behavior. Bunli uses [Standard Schema](https://github.com/standard-schema/standard-schema) (typically via Zod) for runtime validation and automatic type inference.
+
+## Defining Options
+
+Use the `option()` function to create type-safe command options:
+
+```typescript
+import { option } from '@bunli/core'
+import { z } from 'zod'
+
+const startCommand = defineCommand({
+  name: 'start',
+  options: {
+    port: option(
+      z.coerce.number().min(1000).max(65535).default(3000),
+      { 
+        description: 'Port to run the server on',
+        short: 'p'
+      }
+    ),
+    host: option(
+      z.string().default('localhost'),
+      { 
+        description: 'Host to bind the server to',
+        short: 'h'
+      }
+    )
+  },
+  handler: async ({ flags }) => {
+    // flags.port is number (validated and coerced)
+    // flags.host is string
+    console.log(`Starting server on ${flags.host}:${flags.port}`)
+  }
+})
+```
+
+## Option Function
+
+The `option()` function signature:
+
+```typescript
+function option<S extends StandardSchemaV1>(
+  schema: S,
+  metadata?: { 
+    short?: string
+    description?: string 
+  }
+): CLIOption<S>
+```
+
+<ParamField path="schema" type="StandardSchemaV1" required>
+  Validation schema (typically Zod). Defines the option's type and constraints.
+</ParamField>
+
+<ParamField path="metadata" type="object">
+  Optional metadata for the option:
+  
+  <ParamField path="short" type="string">
+    Single-character short flag (e.g., `'p'` for `-p`)
+  </ParamField>
+  
+  <ParamField path="description" type="string">
+    Human-readable description shown in help output
+  </ParamField>
+</ParamField>
+
+## Option Types
+
+Bunli supports all standard data types through Zod schemas:
+
+### String Options
+
+```typescript
+options: {
+  // Basic string
+  name: option(
+    z.string(),
+    { description: 'Your name' }
+  ),
+  
+  // String with default
+  greeting: option(
+    z.string().default('Hello'),
+    { description: 'Greeting message' }
+  ),
+  
+  // Optional string
+  message: option(
+    z.string().optional(),
+    { description: 'Optional message' }
+  ),
+  
+  // String with validation
+  email: option(
+    z.string().email(),
+    { description: 'Email address' }
+  ),
+  
+  // Enum/literal types
+  logLevel: option(
+    z.enum(['debug', 'info', 'warn', 'error']),
+    { description: 'Logging level' }
+  )
+}
+```
+
+### Number Options
+
+```typescript
+options: {
+  // Basic number with coercion
+  port: option(
+    z.coerce.number(),
+    { description: 'Port number', short: 'p' }
+  ),
+  
+  // Number with constraints
+  port: option(
+    z.coerce.number().min(1000).max(65535).default(3000),
+    { description: 'Port between 1000-65535' }
+  ),
+  
+  // Integer only
+  count: option(
+    z.coerce.number().int().positive(),
+    { description: 'Positive integer' }
+  ),
+  
+  // Optional number
+  timeout: option(
+    z.coerce.number().optional(),
+    { description: 'Timeout in milliseconds' }
+  )
+}
+```
+
+<Note>
+Use `z.coerce.number()` instead of `z.number()` for CLI options. This automatically converts string input to numbers.
+</Note>
+
+### Boolean Options
+
+```typescript
+options: {
+  // Basic boolean with default
+  watch: option(
+    z.coerce.boolean().default(false),
+    { description: 'Enable file watching', short: 'w' }
+  ),
+  
+  // Boolean flag (presence = true)
+  force: option(
+    z.coerce.boolean().default(false),
+    { description: 'Force operation', short: 'f' }
+  ),
+  
+  // Optional boolean
+  verbose: option(
+    z.coerce.boolean().optional(),
+    { description: 'Verbose output' }
+  )
+}
+```
+
+Boolean options support multiple input formats:
+- `--watch` → `true`
+- `--watch=true` → `true`
+- `--watch=false` → `false`
+- `--no-watch` → `false`
+
+### Array Options
+
+```typescript
+options: {
+  // Array of strings
+  files: option(
+    z.array(z.string()),
+    { description: 'Files to process' }
+  ),
+  
+  // Array with default
+  tags: option(
+    z.array(z.string()).default([]),
+    { description: 'Tags to apply' }
+  ),
+  
+  // Array with validation
+  ports: option(
+    z.array(z.coerce.number().min(1000)),
+    { description: 'Valid port numbers' }
+  )
+}
+```
+
+Array options can be specified multiple times:
+```bash
+mycli command --files file1.txt --files file2.txt --files file3.txt
+```
+
+### Object Options
+
+```typescript
+options: {
+  // Complex object
+  config: option(
+    z.object({
+      host: z.string(),
+      port: z.coerce.number(),
+      ssl: z.boolean()
+    }),
+    { description: 'Server configuration' }
+  ),
+  
+  // Partial object
+  overrides: option(
+    z.object({
+      timeout: z.coerce.number().optional(),
+      retries: z.coerce.number().optional()
+    }).optional(),
+    { description: 'Configuration overrides' }
+  )
+}
+```
+
+## Required vs Optional
+
+<Tabs>
+  <Tab title="Required Options">
+    Options without `.optional()` or `.default()` are required:
+    
+    ```typescript
+    options: {
+      name: option(
+        z.string(),  // Required - must be provided
+        { description: 'Your name' }
+      )
+    }
+    ```
+    
+    Usage:
+    ```bash
+    mycli greet --name "Alice"  # ✓ Valid
+    mycli greet                 # ✗ Error: name is required
+    ```
+  </Tab>
+  
+  <Tab title="Optional Options">
+    Options with `.optional()` or `.default()` are optional:
+    
+    ```typescript
+    options: {
+      // Optional - undefined if not provided
+      message: option(
+        z.string().optional(),
+        { description: 'Optional message' }
+      ),
+      
+      // Default value - uses default if not provided
+      greeting: option(
+        z.string().default('Hello'),
+        { description: 'Greeting message' }
+      )
+    }
+    ```
+    
+    Usage:
+    ```bash
+    mycli greet                    # ✓ Valid (uses defaults)
+    mycli greet --message "Hi"    # ✓ Valid
+    ```
+  </Tab>
+</Tabs>
+
+## Short Flags
+
+Provide single-character shortcuts for frequently used options:
+
+```typescript
+options: {
+  port: option(
+    z.coerce.number().default(3000),
+    { short: 'p', description: 'Port number' }
+  ),
+  verbose: option(
+    z.coerce.boolean().default(false),
+    { short: 'v', description: 'Verbose output' }
+  )
+}
+```
+
+Usage:
+```bash
+mycli start --port 8080 --verbose  # Long form
+mycli start -p 8080 -v             # Short form
+mycli start -p 8080 -v             # Mixed
+```
+
+## Zod Validation Integration
+
+Leverage Zod's powerful validation capabilities:
+
+<Tabs>
+  <Tab title="String Validation">
+    ```typescript
+    options: {
+      email: option(
+        z.string().email(),
+        { description: 'Email address' }
+      ),
+      url: option(
+        z.string().url(),
+        { description: 'Website URL' }
+      ),
+      username: option(
+        z.string().min(3).max(20).regex(/^[a-z0-9_]+$/),
+        { description: 'Username (3-20 chars, lowercase alphanumeric)' }
+      )
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Number Validation">
+    ```typescript
+    options: {
+      port: option(
+        z.coerce.number()
+          .min(1000, 'Port must be at least 1000')
+          .max(65535, 'Port must be at most 65535'),
+        { description: 'Server port' }
+      ),
+      percentage: option(
+        z.coerce.number().min(0).max(100),
+        { description: 'Percentage (0-100)' }
+      )
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Custom Validation">
+    ```typescript
+    options: {
+      path: option(
+        z.string().refine(
+          (val) => existsSync(val),
+          { message: 'Path must exist' }
+        ),
+        { description: 'File or directory path' }
+      ),
+      config: option(
+        z.string().transform((val) => {
+          try {
+            return JSON.parse(val)
+          } catch {
+            throw new Error('Invalid JSON')
+          }
+        }),
+        { description: 'JSON configuration' }
+      )
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Advanced Patterns
+
+### Conditional Validation
+
+```typescript
+options: {
+  mode: option(
+    z.enum(['dev', 'prod']),
+    { description: 'Environment mode' }
+  ),
+  port: option(
+    z.coerce.number().optional().transform((val, ctx) => {
+      const mode = ctx.path[0] === 'dev' ? 'dev' : 'prod'
+      return val ?? (mode === 'dev' ? 3000 : 8080)
+    }),
+    { description: 'Port (auto-selected based on mode)' }
+  )
+}
+```
+
+### Transformations
+
+```typescript
+options: {
+  tags: option(
+    z.string()
+      .transform(val => val.split(',').map(t => t.trim()))
+      .pipe(z.array(z.string().min(1))),
+    { description: 'Comma-separated tags' }
+  )
+}
+```
+
+Usage:
+```bash
+mycli command --tags "frontend, backend, api"  # → ['frontend', 'backend', 'api']
+```
+
+### Union Types
+
+```typescript
+options: {
+  output: option(
+    z.union([
+      z.literal('json'),
+      z.literal('yaml'),
+      z.literal('text')
+    ]),
+    { description: 'Output format' }
+  ),
+  config: option(
+    z.union([
+      z.string(),  // File path
+      z.object({ /* config object */ })
+    ]),
+    { description: 'Config file path or inline config' }
+  )
+}
+```
+
+## Validation Errors
+
+Bunli provides helpful error messages for validation failures:
+
+```typescript
+const command = defineCommand({
+  name: 'start',
+  options: {
+    port: option(
+      z.coerce.number().min(1000).max(65535),
+      { description: 'Port number' }
+    )
+  },
+  handler: async ({ flags }) => {
+    // Port is guaranteed to be valid here
+  }
+})
+```
+
+```bash
+$ mycli start --port 80
+Validation Error:
+  port:
+    • Number must be greater than or equal to 1000
+```
+
+## Type Inference
+
+Bunli automatically infers option types from schemas:
+
+```typescript
+const command = defineCommand({
+  name: 'example',
+  options: {
+    str: option(z.string()),
+    num: option(z.coerce.number()),
+    bool: option(z.coerce.boolean().default(false)),
+    arr: option(z.array(z.string())),
+    opt: option(z.string().optional())
+  },
+  handler: async ({ flags }) => {
+    // TypeScript knows:
+    // flags.str is string
+    // flags.num is number
+    // flags.bool is boolean
+    // flags.arr is string[]
+    // flags.opt is string | undefined
+  }
+})
+```
+
+## Global Flags
+
+Bunli automatically includes global flags in all commands:
+
+<ParamField path="--help" type="boolean">
+  Show help for the command
+</ParamField>
+
+<ParamField path="--version" type="boolean">
+  Show CLI version
+</ParamField>
+
+<ParamField path="--verbose" type="boolean">
+  Enable verbose logging
+</ParamField>
+
+## Best Practices
+
+<Steps>
+  <Step title="Use coercion for numbers and booleans">
+    CLI arguments are always strings. Use `z.coerce.number()` and `z.coerce.boolean()` for automatic conversion.
+    ```typescript
+    z.coerce.number()  // ✓ Converts "123" to 123
+    z.number()         // ✗ Fails on string input
+    ```
+  </Step>
+  
+  <Step title="Provide defaults for optional options">
+    Makes your CLI easier to use and reduces conditional logic.
+    ```typescript
+    port: option(z.coerce.number().default(3000))
+    ```
+  </Step>
+  
+  <Step title="Add helpful descriptions">
+    Descriptions appear in help output and guide users.
+    ```typescript
+    option(z.string(), { description: 'Path to config file' })
+    ```
+  </Step>
+  
+  <Step title="Use short flags for common options">
+    Make frequently used options quick to type.
+    ```typescript
+    option(z.boolean(), { short: 'v', description: 'Verbose' })
+    ```
+  </Step>
+</Steps>
+
+## See Also
+
+- [Commands](/concepts/commands) - Define CLI commands
+- [Handlers](/concepts/handlers) - Implement command logic
+- [Validation API](/api/validation) - Validation utilities
+- [Zod Documentation](https://zod.dev/) - Learn about Zod schemas

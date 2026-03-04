@@ -1,0 +1,239 @@
+---
+title: Terminal UI Overview
+description: Build beautiful terminal user interfaces with React and OpenTUI
+---
+
+# Terminal UI Overview
+
+Bunli provides first-class support for building interactive terminal user interfaces using React and OpenTUI. The TUI system is split across two complementary packages:
+
+- **`@bunli/runtime`** - Core rendering runtime, prompt primitives, and lifecycle management
+- **`@bunli/tui`** - React components, hooks, and UI primitives
+
+## Quick Start
+
+```typescript
+import { defineCommand } from '@bunli/core'
+import { useKeyboard, useRenderer } from '@bunli/tui'
+
+function DeployUI() {
+  const renderer = useRenderer()
+
+  useKeyboard((key) => {
+    if (key.name === 'q') {
+      renderer.destroy()
+    }
+  })
+
+  return (
+    <box title="Deploy" border padding={2}>
+      <text>Deploying application...</text>
+      <text>Press 'q' to quit</text>
+    </box>
+  )
+}
+
+export const deploy = defineCommand({
+  name: 'deploy',
+  description: 'Deploy application',
+  render: () => <DeployUI />,
+  handler: async () => {
+    // CLI fallback when not interactive
+    console.log('Deploying...')
+  }
+})
+```
+
+## Architecture
+
+### Component Hierarchy
+
+```
+@bunli/core
+  └── Command definition with render property
+        ↓
+@bunli/runtime
+  ├── runTuiRender() - Renderer lifecycle
+  ├── AppRuntimeProvider - Runtime context
+  ├── Prompt APIs - text(), confirm(), select()
+  └── OpenTUI renderer wiring
+        ↓
+@bunli/tui
+  ├── Components - Form, Alert, Table, etc.
+  ├── Hooks - useKeyboard, useRenderer, etc.
+  └── Charts - BarChart, LineChart, Sparkline
+```
+
+### OpenTUI Integration
+
+Bunli uses [OpenTUI](https://github.com/wobsoriano/opentui) as its terminal rendering engine. OpenTUI provides:
+
+- **React Renderer** - Render React components to the terminal
+- **Layout Engine** - Flexbox-like layout for terminal UIs
+- **Event System** - Keyboard and resize events
+- **Primitive Components** - `<box>`, `<text>`, `<input>`, `<select>`, etc.
+
+```typescript
+import { useTerminalDimensions, useOnResize } from '@bunli/tui'
+
+function ResponsiveUI() {
+  const { width, height } = useTerminalDimensions()
+
+  useOnResize((w, h) => {
+    console.log(`Terminal resized to ${w}x${h}`)
+  })
+
+  return (
+    <box style={{ width: '100%', height: '100%' }}>
+      <text>Terminal: {width}x{height}</text>
+    </box>
+  )
+}
+```
+
+## When to Use TUI vs Plain Console
+
+### Use TUI When:
+
+✅ Building **interactive workflows** that require user input  
+✅ Need **real-time updates** and animations  
+✅ Want **structured layouts** with borders and styling  
+✅ Building **forms** with validation and field navigation  
+✅ Creating **dashboard views** with live data  
+✅ Need **keyboard navigation** (menus, tables, command palettes)
+
+### Use Plain Console When:
+
+✅ Simple **log-based output** is sufficient  
+✅ Running in **CI/CD pipelines** (non-interactive)  
+✅ **Scripting** and automation contexts  
+✅ Need **parseable output** for other tools  
+✅ Minimal **terminal compatibility** requirements
+
+## Buffer Modes
+
+Bunli supports two terminal buffer modes:
+
+### Standard Buffer (Default)
+
+```typescript
+const cli = await createCLI({
+  name: 'my-app',
+  tui: {
+    renderer: {
+      bufferMode: 'standard' // default
+    }
+  }
+})
+```
+
+- Renders in the **scrollback buffer**
+- Output **persists** after command exits
+- Best for **CLI-style interactions** (prompts, progress)
+- Mouse tracking **disabled by default** to prevent escape sequences
+
+### Alternate Buffer
+
+```typescript
+const cli = await createCLI({
+  name: 'my-app',
+  tui: {
+    renderer: {
+      bufferMode: 'alternate'
+    }
+  }
+})
+```
+
+- Full-screen mode using **alternate screen buffer**
+- Screen **clears** when command exits
+- Best for **fullscreen apps** (editors, dashboards)
+- Can enable **mouse tracking** safely
+
+## Render Lifecycle
+
+Commands with `render` must eventually call `renderer.destroy()` to exit:
+
+```typescript
+function InteractiveUI() {
+  const renderer = useRenderer()
+  const [status, setStatus] = useState('idle')
+
+  useKeyboard((key) => {
+    if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
+      renderer.destroy() // Exit the TUI
+    }
+  })
+
+  const handleSubmit = async () => {
+    setStatus('processing')
+    await doWork()
+    setStatus('done')
+    renderer.destroy() // Exit after completion
+  }
+
+  return (
+    <box>
+      <text>Status: {status}</text>
+    </box>
+  )
+}
+```
+
+**Important:** If you never call `renderer.destroy()`, the command will hang.
+
+## Non-Interactive Fallback
+
+Always provide a `handler` fallback for non-interactive environments:
+
+```typescript
+export const configure = defineCommand({
+  name: 'configure',
+  description: 'Configure application',
+  render: () => <ConfigForm />, // Interactive TUI
+  handler: async () => {
+    // CLI fallback for CI/CD
+    console.log('Running in non-interactive mode')
+    const config = loadDefaultConfig()
+    await saveConfig(config)
+  }
+})
+```
+
+## Module Organization
+
+Bunli TUI provides subpath exports for different use cases:
+
+```typescript
+// Core components and hooks
+import { Form, Alert, useKeyboard } from '@bunli/tui'
+
+// Interactive components (alternate buffer)
+import { Modal, Menu, CommandPalette } from '@bunli/tui/interactive'
+
+// Chart components
+import { BarChart, LineChart, Sparkline } from '@bunli/tui/charts'
+
+// Inline output helpers (standard buffer)
+import { spinner, intro, outro, note } from '@bunli/tui/inline'
+
+// Runtime APIs
+import { prompt } from '@bunli/runtime/prompt'
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Prompts" icon="terminal" href="/tui/prompts">
+    Learn about input prompts, selections, and spinners
+  </Card>
+  <Card title="Rendering" icon="paint-brush" href="/tui/rendering">
+    Understand the renderer API and React integration
+  </Card>
+  <Card title="Components" icon="shapes" href="/tui/components">
+    Explore available UI components
+  </Card>
+  <Card title="Interactive UIs" icon="window" href="/tui/interactive-uis">
+    Build full interactive interfaces
+  </Card>
+</CardGroup>

@@ -1,0 +1,176 @@
+---
+title: "Renderer"
+description: "Runtime renderer API for Bunli TUI applications"
+---
+
+## Overview
+
+The renderer module provides the core rendering engine for Bunli TUI applications. It manages the OpenTUI renderer lifecycle, handles alternate screen buffers, and provides React integration.
+
+## Imports
+
+```typescript
+import { runTuiRender } from '@bunli/runtime/renderer'
+import type { RunTuiRenderArgs, TuiRenderOptions } from '@bunli/runtime'
+```
+
+## runTuiRender
+
+Runs a TUI render with the provided command and options.
+
+```typescript
+async function runTuiRender(args: RunTuiRenderArgs): Promise<void>
+```
+
+### Parameters
+
+<ParamField path="args" type="RunTuiRenderArgs" required>
+  Render configuration
+  
+  <Expandable title="properties">
+    <ParamField path="command.render" type="(args: any) => ReactElement" required>
+      Function that returns the React component to render
+    </ParamField>
+    
+    <ParamField path="rendererOptions" type="TuiRenderOptions">
+      Renderer configuration options
+    </ParamField>
+    
+    <ParamField path="transport" type="RuntimeTransport">
+      Event transport for runtime events
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Example
+
+```typescript
+import { runTuiRender } from '@bunli/runtime/renderer'
+import { App } from './app'
+
+await runTuiRender({
+  command: {
+    render: () => <App />
+  },
+  rendererOptions: {
+    bufferMode: 'alternate',
+    exitOnCtrlC: true,
+    targetFps: 30
+  }
+})
+```
+
+## TuiRenderOptions
+
+Configuration options for the OpenTUI renderer.
+
+### Fields
+
+<ParamField path="exitOnCtrlC" type="boolean" default="true">
+  Whether to exit the application on Ctrl+C
+</ParamField>
+
+<ParamField path="targetFps" type="number" default="30">
+  Target frames per second for rendering
+</ParamField>
+
+<ParamField path="enableMouseMovement" type="boolean" default="true">
+  Enable mouse movement events
+</ParamField>
+
+<ParamField path="useMouse" type="boolean" default="false">
+  Enable mouse input support
+</ParamField>
+
+<ParamField path="bufferMode" type="'alternate' | 'standard'" default="'standard'">
+  Terminal buffer mode:
+  - `alternate`: Full-screen alternate buffer (clears screen)
+  - `standard`: Render in the main buffer (inline with terminal history)
+</ParamField>
+
+### Example
+
+```typescript
+const options: TuiRenderOptions = {
+  bufferMode: 'alternate',
+  exitOnCtrlC: true,
+  targetFps: 60,
+  useMouse: true,
+  enableMouseMovement: true
+}
+```
+
+## Runtime Events
+
+The renderer emits lifecycle events through the transport:
+
+<ResponseField name="runtime.renderer.started" type="RuntimeRendererStartedEvent">
+  Emitted when the renderer starts
+  
+  <Expandable title="properties">
+    <ResponseField name="timestamp" type="number">
+      Unix timestamp in milliseconds
+    </ResponseField>
+    
+    <ResponseField name="bufferMode" type="'alternate' | 'standard'">
+      Active buffer mode
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="runtime.renderer.destroyed" type="RuntimeRendererDestroyedEvent">
+  Emitted when the renderer is destroyed
+  
+  <Expandable title="properties">
+    <ResponseField name="timestamp" type="number">
+      Unix timestamp in milliseconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="runtime.renderer.missing-render" type="RuntimeRendererMissingRenderEvent">
+  Emitted when command.render is missing or invalid
+  
+  <Expandable title="properties">
+    <ResponseField name="timestamp" type="number">
+      Unix timestamp in milliseconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## AppRuntimeProvider
+
+React context provider for runtime features.
+
+```typescript
+import { AppRuntimeProvider } from '@bunli/runtime'
+
+function App() {
+  return (
+    <AppRuntimeProvider>
+      <YourApp />
+    </AppRuntimeProvider>
+  )
+}
+```
+
+The `AppRuntimeProvider` is automatically included by `runTuiRender`, so you typically don't need to use it directly.
+
+## Best Practices
+
+<Card title="Buffer Mode Selection" icon="display">
+  - Use `alternate` for full-screen applications (dashboards, editors)
+  - Use `standard` for inline output that should remain in terminal history
+</Card>
+
+<Card title="Frame Rate" icon="gauge">
+  - Default 30 FPS is suitable for most applications
+  - Increase to 60 FPS for smooth animations
+  - Lower FPS reduces CPU usage for static content
+</Card>
+
+<Card title="Error Handling" icon="triangle-exclamation">
+  - Always provide a valid `render` function
+  - Handle component errors with React error boundaries
+  - Use transport to monitor renderer lifecycle events
+</Card>

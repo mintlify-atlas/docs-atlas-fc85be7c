@@ -1,0 +1,633 @@
+---
+title: "Components"
+description: "TUI component library for building terminal interfaces"
+---
+
+## Overview
+
+Bunli TUI provides a comprehensive set of components for building beautiful terminal user interfaces. All components are built on OpenTUI and integrate seamlessly with React.
+
+## Layout Components
+
+### Stack
+
+Flexbox-based layout container.
+
+```typescript
+interface StackProps {
+  children: ReactNode
+  direction?: 'row' | 'column'
+  gap?: number
+  align?: 'flex-start' | 'center' | 'flex-end' | 'stretch'
+  justify?: 'flex-start' | 'center' | 'flex-end' | 'space-between' | 'space-around' | 'space-evenly'
+  padding?: number
+  border?: boolean
+  title?: string
+  style?: Record<string, unknown>
+}
+```
+
+#### Example
+
+```tsx
+import { Stack } from '@bunli/tui'
+
+function App() {
+  return (
+    <Stack direction="column" gap={2} padding={2} border>
+      <text content="Header" />
+      <Stack direction="row" gap={1}>
+        <text content="Left" />
+        <text content="Right" />
+      </Stack>
+    </Stack>
+  )
+}
+```
+
+### Grid
+
+Grid layout for organizing content.
+
+```typescript
+interface GridProps {
+  children: ReactNode
+  columns?: number
+  gap?: number
+}
+```
+
+#### Example
+
+```tsx
+import { Grid, Card } from '@bunli/tui'
+
+function Dashboard() {
+  return (
+    <Grid columns={3} gap={2}>
+      <Card title="Users">100</Card>
+      <Card title="Posts">500</Card>
+      <Card title="Comments">2.5k</Card>
+    </Grid>
+  )
+}
+```
+
+### Container
+
+Max-width container with padding.
+
+```typescript
+interface ContainerProps {
+  children: ReactNode
+  maxWidth?: number
+  padding?: number
+}
+```
+
+## Display Components
+
+### Card
+
+Container for grouping related content.
+
+```typescript
+interface CardProps {
+  title: string
+  description?: string
+  tone?: 'default' | 'accent' | 'success' | 'warning' | 'danger'
+  size?: 'sm' | 'md' | 'lg'
+  emphasis?: 'subtle' | 'outline' | 'solid'
+  children?: ReactNode
+}
+```
+
+#### Example
+
+```tsx
+import { Card } from '@bunli/tui'
+
+function Profile() {
+  return (
+    <Card
+      title="User Profile"
+      description="Manage your account"
+      tone="accent"
+      size="md"
+    >
+      <text content="Name: John Doe" />
+      <text content="Email: john@example.com" />
+    </Card>
+  )
+}
+```
+
+### Alert
+
+Display important messages.
+
+```typescript
+interface AlertProps {
+  tone?: 'info' | 'success' | 'warning' | 'danger'
+  size?: 'sm' | 'md' | 'lg'
+  emphasis?: 'subtle' | 'outline' | 'solid'
+  title?: string
+  message: string
+  children?: ReactNode
+}
+```
+
+#### Example
+
+```tsx
+import { Alert } from '@bunli/tui'
+
+function Notifications() {
+  return (
+    <>
+      <Alert tone="success" message="Profile updated successfully!" />
+      <Alert 
+        tone="warning" 
+        title="Warning"
+        message="Your session will expire soon"
+      />
+      <Alert tone="danger" message="Failed to save changes" />
+    </>
+  )
+}
+```
+
+### Badge
+
+Small status indicator.
+
+```typescript
+interface BadgeProps {
+  label: string
+  tone?: 'default' | 'accent' | 'success' | 'warning' | 'danger'
+  size?: 'sm' | 'md' | 'lg'
+  emphasis?: 'subtle' | 'outline' | 'solid'
+}
+```
+
+#### Example
+
+```tsx
+import { Badge } from '@bunli/tui'
+
+function Status() {
+  return (
+    <box style={{ flexDirection: 'row', gap: 1 }}>
+      <Badge label="Active" tone="success" />
+      <Badge label="Pending" tone="warning" />
+      <Badge label="Failed" tone="danger" />
+    </box>
+  )
+}
+```
+
+### Divider
+
+Visual separator.
+
+```typescript
+interface DividerProps {
+  width?: number
+  char?: string
+}
+```
+
+#### Example
+
+```tsx
+import { Divider } from '@bunli/tui'
+
+function Menu() {
+  return (
+    <box style={{ flexDirection: 'column' }}>
+      <text content="Header" />
+      <Divider />
+      <text content="Content" />
+      <Divider char="=" />
+      <text content="Footer" />
+    </box>
+  )
+}
+```
+
+### EmptyState
+
+Placeholder for empty content.
+
+```typescript
+interface EmptyStateProps {
+  title: string
+  description?: string
+  icon?: string
+  action?: ReactNode
+}
+```
+
+#### Example
+
+```tsx
+import { EmptyState } from '@bunli/tui'
+
+function UserList({ users }) {
+  if (users.length === 0) {
+    return (
+      <EmptyState
+        title="No users found"
+        description="Add your first user to get started"
+        icon="👤"
+      />
+    )
+  }
+
+  return <>{/* render users */}</>
+}
+```
+
+### KeyValueList
+
+Display key-value pairs.
+
+```typescript
+interface KeyValueListProps {
+  items: KeyValueItem[]
+  gap?: number
+}
+
+interface KeyValueItem {
+  key: string
+  value: string | ReactNode
+  hint?: string
+}
+```
+
+#### Example
+
+```tsx
+import { KeyValueList } from '@bunli/tui'
+
+function SystemInfo() {
+  return (
+    <KeyValueList
+      items={[
+        { key: 'OS', value: 'Linux' },
+        { key: 'Memory', value: '16 GB' },
+        { key: 'CPU', value: 'Intel i7', hint: '8 cores' }
+      ]}
+    />
+  )
+}
+```
+
+### ProgressBar
+
+Visual progress indicator.
+
+```typescript
+interface ProgressBarProps {
+  value: number // 0-100
+  width?: number
+  showPercentage?: boolean
+  tone?: 'default' | 'accent' | 'success' | 'warning' | 'danger'
+}
+```
+
+#### Example
+
+```tsx
+import { ProgressBar } from '@bunli/tui'
+import { useState, useEffect } from 'react'
+
+function Upload() {
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setProgress(p => Math.min(p + 10, 100))
+    }, 500)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <box style={{ flexDirection: 'column', gap: 1 }}>
+      <text content="Uploading..." />
+      <ProgressBar value={progress} showPercentage />
+    </box>
+  )
+}
+```
+
+## Form Components
+
+### Form
+
+Schema-based form with validation.
+
+```typescript
+interface FormProps<TSchema extends StandardSchemaV1> {
+  title: string
+  schema: TSchema
+  onSubmit: (values: StandardSchemaV1.InferOutput<TSchema>) => void | Promise<void>
+  onCancel?: () => void
+  onReset?: () => void
+  initialValues?: Partial<StandardSchemaV1.InferOutput<TSchema>>
+  validateOnChange?: boolean
+  children: React.ReactNode
+}
+```
+
+#### Example
+
+```tsx
+import { Form, FormField } from '@bunli/tui'
+import { z } from 'zod'
+
+const schema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  age: z.number().int().positive()
+})
+
+function UserForm() {
+  return (
+    <Form
+      title="Create User"
+      schema={schema}
+      onSubmit={(values) => {
+        console.log('Submitted:', values)
+      }}
+      initialValues={{ name: '', email: '', age: 18 }}
+    >
+      <FormField name="name" label="Name" />
+      <FormField name="email" label="Email" />
+      <FormField name="age" label="Age" type="number" />
+    </Form>
+  )
+}
+```
+
+### FormField
+
+Generic text input field.
+
+```typescript
+interface FormFieldProps {
+  name: string
+  label: string
+  description?: string
+  placeholder?: string
+  defaultValue?: string
+  type?: 'text' | 'number'
+}
+```
+
+### SelectField
+
+Dropdown select field.
+
+```typescript
+interface SelectFieldProps<T = string> {
+  name: string
+  label: string
+  options: SelectOption<T>[]
+  defaultValue?: T
+}
+```
+
+### MultiSelectField
+
+Multiple selection field.
+
+```typescript
+interface MultiSelectFieldProps<T = string> {
+  name: string
+  label: string
+  options: SelectOption<T>[]
+  defaultValue?: T[]
+  min?: number
+  max?: number
+}
+```
+
+### CheckboxField
+
+Boolean checkbox field.
+
+```typescript
+interface CheckboxFieldProps {
+  name: string
+  label: string
+  description?: string
+  defaultValue?: boolean
+}
+```
+
+### PasswordField
+
+Password input with toggle.
+
+```typescript
+interface PasswordFieldProps {
+  name: string
+  label: string
+  description?: string
+}
+```
+
+### TextareaField
+
+Multiline text input.
+
+```typescript
+interface TextareaFieldProps {
+  name: string
+  label: string
+  rows?: number
+  defaultValue?: string
+}
+```
+
+## Interactive Components
+
+### Modal
+
+Overlay modal dialog.
+
+```typescript
+interface ModalProps {
+  isOpen: boolean
+  title: string
+  children: ReactNode
+  onClose?: () => void
+  closeHint?: string
+  zIndex?: number
+}
+```
+
+#### Example
+
+```tsx
+import { Modal } from '@bunli/tui'
+import { useState } from 'react'
+
+function App() {
+  const [isOpen, setIsOpen] = useState(false)
+
+  return (
+    <>
+      <text content="Press M to open modal" />
+      <Modal
+        isOpen={isOpen}
+        title="Confirmation"
+        onClose={() => setIsOpen(false)}
+      >
+        <text content="Are you sure?" />
+      </Modal>
+    </>
+  )
+}
+```
+
+### Menu
+
+Keyboard-navigable menu.
+
+```typescript
+interface MenuProps<T = string> {
+  items: MenuItem<T>[]
+  onSelect: (value: T) => void
+  selectedValue?: T
+}
+
+interface MenuItem<T = string> {
+  label: string
+  value: T
+  disabled?: boolean
+  hint?: string
+}
+```
+
+#### Example
+
+```tsx
+import { Menu } from '@bunli/tui'
+
+function Navigation() {
+  return (
+    <Menu
+      items={[
+        { label: 'Home', value: 'home' },
+        { label: 'Settings', value: 'settings' },
+        { label: 'About', value: 'about' }
+      ]}
+      onSelect={(value) => {
+        console.log('Selected:', value)
+      }}
+    />
+  )
+}
+```
+
+### CommandPalette
+
+Searchable command palette.
+
+```typescript
+interface CommandPaletteProps {
+  items: CommandPaletteItem[]
+  onSelect: (item: CommandPaletteItem) => void
+  onClose?: () => void
+  placeholder?: string
+}
+
+interface CommandPaletteItem {
+  id: string
+  label: string
+  description?: string
+  keywords?: string[]
+}
+```
+
+### DataTable
+
+Tabular data display.
+
+```typescript
+interface DataTableProps {
+  columns: DataTableColumn[]
+  data: Record<string, unknown>[]
+  onSelect?: (row: Record<string, unknown>) => void
+}
+
+interface DataTableColumn {
+  key: string
+  label: string
+  width?: number
+}
+```
+
+#### Example
+
+```tsx
+import { DataTable } from '@bunli/tui'
+
+function UserTable() {
+  return (
+    <DataTable
+      columns={[
+        { key: 'name', label: 'Name', width: 20 },
+        { key: 'email', label: 'Email', width: 30 },
+        { key: 'role', label: 'Role', width: 15 }
+      ]}
+      data={[
+        { name: 'Alice', email: 'alice@example.com', role: 'Admin' },
+        { name: 'Bob', email: 'bob@example.com', role: 'User' }
+      ]}
+      onSelect={(row) => console.log(row)}
+    />
+  )
+}
+```
+
+### Tabs
+
+Tabbed content switcher.
+
+```typescript
+interface TabsProps {
+  tabs: Array<{ label: string; value: string }>
+  activeTab: string
+  onTabChange: (value: string) => void
+  children: ReactNode
+}
+```
+
+## Best Practices
+
+<Card title="Layout" icon="table-cells">
+  Use `Stack` and `Grid` for responsive layouts that adapt to terminal size
+</Card>
+
+<Card title="Forms" icon="input-text">
+  Always use schema validation with Zod or similar for type-safe forms
+</Card>
+
+<Card title="Accessibility" icon="universal-access">
+  - Provide keyboard shortcuts for all interactive elements
+  - Use semantic component names
+  - Include helpful hints and descriptions
+</Card>
+
+<Card title="Theming" icon="palette">
+  Use theme tokens instead of hardcoded colors for consistent styling
+</Card>
+
+<Card title="Performance" icon="gauge">
+  - Avoid deep nesting of layout components
+  - Use `React.memo` for expensive components
+  - Minimize re-renders in tables and lists
+</Card>

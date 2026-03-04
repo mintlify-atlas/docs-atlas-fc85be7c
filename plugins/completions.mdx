@@ -1,0 +1,384 @@
+---
+title: Shell Completions Plugin
+description: Generate shell completion scripts for bash, zsh, fish, and PowerShell
+---
+
+## Overview
+
+The `@bunli/plugin-completions` plugin automatically generates shell completion scripts for your CLI. Supports:
+
+- Bash
+- Zsh  
+- Fish
+- PowerShell
+
+## Installation
+
+```bash
+bun add @bunli/plugin-completions
+```
+
+## Usage
+
+```typescript
+import { createCLI } from '@bunli/core'
+import { completionsPlugin } from '@bunli/plugin-completions'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    completionsPlugin()
+  ]
+})
+```
+
+The plugin automatically registers a `completions` command.
+
+## Generating Completion Scripts
+
+Generate completion scripts for your shell:
+
+```bash
+# Bash
+my-cli completions bash > /usr/local/etc/bash_completion.d/my-cli
+
+# Zsh
+my-cli completions zsh > /usr/local/share/zsh/site-functions/_my-cli
+
+# Fish
+my-cli completions fish > ~/.config/fish/completions/my-cli.fish
+
+# PowerShell
+my-cli completions powershell > $PROFILE
+```
+
+## Installation Instructions
+
+### Bash
+
+```bash
+# macOS with Homebrew
+my-cli completions bash > $(brew --prefix)/etc/bash_completion.d/my-cli
+
+# Linux
+my-cli completions bash | sudo tee /etc/bash_completion.d/my-cli
+
+# Then reload:
+source ~/.bashrc
+```
+
+### Zsh
+
+```bash
+# Add to a directory in $fpath
+my-cli completions zsh > /usr/local/share/zsh/site-functions/_my-cli
+
+# Or add to your ~/.zshrc:
+eval "$(my-cli completions zsh)"
+
+# Reload:
+source ~/.zshrc
+```
+
+### Fish
+
+```bash
+# Install completion script
+my-cli completions fish > ~/.config/fish/completions/my-cli.fish
+
+# Fish will automatically load it
+```
+
+### PowerShell
+
+```powershell
+# Add to your PowerShell profile
+my-cli completions powershell | Out-File -Append $PROFILE
+
+# Reload:
+. $PROFILE
+```
+
+## Plugin Options
+
+```typescript
+interface CompletionsPluginOptions {
+  /**
+   * Default shell type
+   */
+  shell?: ShellType
+  
+  /**
+   * CLI executable name (auto-detected if not provided)
+   */
+  executable?: string
+  
+  /**
+   * CLI command name (auto-detected if not provided)
+   */
+  commandName?: string
+  
+  /**
+   * Include command aliases in completions
+   * Default: true
+   */
+  includeAliases?: boolean
+  
+  /**
+   * Include global flags in completions
+   * Default: true
+   */
+  includeGlobalFlags?: boolean
+}
+
+type ShellType = 'bash' | 'zsh' | 'fish' | 'powershell'
+```
+
+## Custom Configuration
+
+```typescript
+import { completionsPlugin } from '@bunli/plugin-completions'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    completionsPlugin({
+      shell: 'zsh',
+      includeAliases: true,
+      includeGlobalFlags: true
+    })
+  ]
+})
+```
+
+## Completion Features
+
+The plugin provides intelligent completions for:
+
+### Command Names
+
+```bash
+my-cli <TAB>
+# Shows: build, dev, test, deploy...
+```
+
+### Command Aliases
+
+```bash
+my-cli b<TAB>
+# Completes to: my-cli build
+```
+
+### Flags and Options
+
+```bash
+my-cli build --<TAB>
+# Shows: --watch, --minify, --target...
+```
+
+### Short Flags
+
+```bash
+my-cli build -<TAB>
+# Shows: -w (watch), -m (minify)...
+```
+
+## Dynamic Completions
+
+The plugin uses a completion protocol for dynamic suggestions:
+
+```bash
+# The "complete" command is called by the shell
+my-cli complete -- my-cli build --<TAB>
+```
+
+This allows completions to:
+- Read from generated metadata
+- Provide context-aware suggestions
+- Support complex flag combinations
+
+## Metadata Generation
+
+The plugin reads from generated command metadata:
+
+```typescript
+// .bunli/commands.gen.ts (auto-generated)
+export const metadata = {
+  commands: [
+    {
+      name: 'build',
+      description: 'Build the project',
+      aliases: ['b'],
+      options: {
+        watch: {
+          type: 'boolean',
+          short: 'w',
+          description: 'Watch for changes'
+        }
+      }
+    }
+  ]
+}
+```
+
+## Debugging Completions
+
+Enable debug mode:
+
+```bash
+export BUNLI_DEBUG_COMPLETIONS=1
+my-cli <TAB>
+```
+
+This will show:
+- Completion protocol calls
+- Parsed metadata
+- Completion errors
+
+## Real-World Example
+
+Complete CLI with shell completions:
+
+```typescript
+import { createCLI } from '@bunli/core'
+import { completionsPlugin } from '@bunli/plugin-completions'
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+const buildCommand = defineCommand({
+  name: 'build',
+  alias: ['b'],
+  description: 'Build the project',
+  options: {
+    watch: option(z.boolean(), {
+      description: 'Watch for changes',
+      short: 'w'
+    }),
+    minify: option(z.boolean(), {
+      description: 'Minify output',
+      short: 'm'
+    }),
+    target: option(z.enum(['node', 'browser']), {
+      description: 'Build target'
+    })
+  },
+  handler: async ({ flags }) => {
+    console.log('Building with:', flags)
+  }
+})
+
+const cli = await createCLI({
+  name: 'my-cli',
+  commands: [buildCommand],
+  plugins: [
+    completionsPlugin({
+      includeAliases: true,
+      includeGlobalFlags: true
+    })
+  ]
+})
+
+await cli.run()
+```
+
+Now users can:
+
+```bash
+# Complete commands
+my-cli <TAB>        # build, help, version, completions
+my-cli b<TAB>       # build
+
+# Complete flags
+my-cli build --<TAB>  # --watch, --minify, --target
+my-cli build -<TAB>   # -w, -m
+
+# Complete enum values
+my-cli build --target <TAB>  # node, browser
+```
+
+## Source Implementation
+
+Plugin registration:
+
+```typescript packages/plugin-completions/src/plugin.ts
+import { createPlugin } from '@bunli/core/plugin'
+import type { PluginContext } from '@bunli/core/plugin'
+import type { CompletionsPluginOptions } from './types.js'
+import completionsCommand from './commands/completions.js'
+
+export const completionsPlugin = createPlugin<CompletionsPluginOptions>(
+  (options = {}) => ({
+    name: 'completions',
+
+    setup(context: PluginContext) {
+      // Register the completion protocol command
+      const command = completionsCommand(options)
+      context.registerCommand(command)
+    }
+  })
+)
+```
+
+## Troubleshooting
+
+### Completions Not Working
+
+1. Ensure the completion script is installed:
+   ```bash
+   # Check if file exists
+   ls /usr/local/etc/bash_completion.d/my-cli
+   ```
+
+2. Reload your shell:
+   ```bash
+   source ~/.bashrc  # or ~/.zshrc
+   ```
+
+3. Check shell integration:
+   ```bash
+   # Bash
+   complete -p my-cli
+   
+   # Zsh
+   which _my-cli
+   ```
+
+### Stale Completions
+
+Regenerate after adding commands:
+
+```bash
+# Regenerate and reinstall
+my-cli completions zsh > /usr/local/share/zsh/site-functions/_my-cli
+source ~/.zshrc
+```
+
+### Permission Errors
+
+Use user-level installation:
+
+```bash
+# Zsh
+mkdir -p ~/.zsh/completions
+my-cli completions zsh > ~/.zsh/completions/_my-cli
+
+# Add to ~/.zshrc:
+fpath=(~/.zsh/completions $fpath)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="AI Detection" icon="robot" href="/plugins/ai-detect">
+    Detect AI coding assistants
+  </Card>
+  <Card title="Config Plugin" icon="file" href="/plugins/config">
+    Load configuration from files
+  </Card>
+  <Card title="Creating Plugins" icon="code" href="/plugins/creating-plugins">
+    Build your own plugins
+  </Card>
+  <Card title="Commands" icon="terminal" href="/concepts/commands">
+    Learn about command definitions
+  </Card>
+</CardGroup>

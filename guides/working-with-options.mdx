@@ -1,0 +1,498 @@
+---
+title: Working with Options
+description: Master command options with Zod schemas, validation, transformations, and type inference
+---
+
+Options make your commands configurable. Bunli uses Zod schemas for validation and automatic type inference.
+
+## Basic Options
+
+Define options using the `option()` helper:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+const greetCommand = defineCommand({
+  name: 'greet',
+  description: 'Greet someone',
+  options: {
+    name: option(
+      z.string().default('world'),
+      {
+        short: 'n',
+        description: 'Name to greet'
+      }
+    )
+  },
+  handler: async ({ flags }) => {
+    console.log(`Hello, ${flags.name}!`)
+  }
+})
+```
+
+## Option Metadata
+
+The `option()` function takes two arguments:
+
+1. **Schema**: A Zod schema for validation and type inference
+2. **Metadata**: Configuration object with:
+   - `short`: Single-character alias (e.g., `-n` for `--name`)
+   - `description`: Help text for the option
+
+**Source:** `packages/core/src/types.ts:286-295`
+
+## String Options
+
+```typescript
+import { option } from '@bunli/core'
+import { z } from 'zod'
+
+const buildCommand = defineCommand({
+  name: 'build',
+  description: 'Build the project',
+  options: {
+    // Simple string
+    outdir: option(
+      z.string().default('dist'),
+      { 
+        short: 'o',
+        description: 'Output directory'
+      }
+    ),
+    
+    // Required string
+    entry: option(
+      z.string(),
+      {
+        short: 'e',
+        description: 'Entry file (required)'
+      }
+    ),
+    
+    // String with validation
+    outdir: option(
+      z.string()
+        .min(1, 'Output directory cannot be empty')
+        .default('dist'),
+      {
+        short: 'o',
+        description: 'Output directory'
+      }
+    )
+  }
+})
+```
+
+**Source:** `examples/task-runner/commands/build.ts:18-27`
+
+## Boolean Options
+
+Boolean flags toggle features on/off:
+
+```typescript
+options: {
+  watch: option(
+    z.coerce.boolean().default(false),
+    {
+      short: 'w',
+      description: 'Watch for changes'
+    }
+  ),
+  
+  minify: option(
+    z.boolean().default(true),
+    {
+      short: 'm',
+      description: 'Minify output'
+    }
+  )
+}
+```
+
+**Usage:**
+- `--watch` or `-w` → `true`
+- `--watch=false` → `false`
+- `--no-watch` → `false` (automatic)
+
+**Source:** `examples/hello-world/commands/greet.tsx:69-73`, `packages/cli/src/commands/build.ts:40-43`
+
+## Number Options
+
+```typescript
+options: {
+  // Simple number
+  port: option(
+    z.coerce.number().default(3000),
+    {
+      short: 'p',
+      description: 'Port number'
+    }
+  ),
+  
+  // Number with range validation
+  port: option(
+    z.coerce.number()
+      .min(1000, 'Port must be >= 1000')
+      .max(65535, 'Port must be <= 65535')
+      .default(3000),
+    {
+      short: 'p',
+      description: 'Port number'
+    }
+  ),
+  
+  // Integer validation
+  times: option(
+    z.coerce.number()
+      .int('Must be a whole number')
+      .positive('Must be positive')
+      .default(1),
+    {
+      short: 't',
+      description: 'Number of times'
+    }
+  )
+}
+```
+
+**Source:** `examples/dev-server/commands/start.ts:9-14`, `examples/hello-world/commands/greet.tsx:75-79`, `examples/git-tool/commands/status.ts:37-47`
+
+## Enum Options
+
+Restrict values to a specific set:
+
+```typescript
+options: {
+  env: option(
+    z.enum(['development', 'staging', 'production'])
+      .default('development'),
+    {
+      short: 'e',
+      description: 'Build environment'
+    }
+  ),
+  
+  runtime: option(
+    z.enum(['bun', 'node']).optional(),
+    {
+      short: 'r',
+      description: 'Runtime target'
+    }
+  )
+}
+```
+
+**Source:** `examples/task-runner/commands/build.ts:8-16`, `packages/cli/src/commands/build.ts:52-55`
+
+## Optional Options
+
+```typescript
+options: {
+  // Optional string
+  config: option(
+    z.string().optional(),
+    {
+      short: 'c',
+      description: 'Config file path'
+    }
+  ),
+  
+  // Optional with transform
+  history: option(
+    z.coerce.number()
+      .int()
+      .min(1)
+      .max(50)
+      .optional(),
+    {
+      short: 'h',
+      description: 'Show commit history (1-50)'
+    }
+  )
+}
+```
+
+**Source:** `examples/git-tool/commands/status.ts:37-47`
+
+## Transformations
+
+Transform input values using `.transform()`:
+
+```typescript
+options: {
+  // Parse JSON
+  config: option(
+    z.string()
+      .transform((val) => {
+        try {
+          return JSON.parse(val)
+        } catch {
+          throw new Error('Invalid JSON configuration')
+        }
+      })
+      .optional(),
+    {
+      short: 'c',
+      description: 'JSON configuration object'
+    }
+  ),
+  
+  // Parse memory size (512m, 2g)
+  memory: option(
+    z.string()
+      .regex(/^\d+[kmg]?$/i, 'Must be number with unit (k, m, g)')
+      .optional()
+      .transform((val) => {
+        const raw = val ?? '512m'
+        const num = parseInt(raw)
+        const unit = raw.slice(-1).toLowerCase()
+        const multipliers = { k: 1024, m: 1024 * 1024, g: 1024 * 1024 * 1024 }
+        return num * (multipliers[unit as keyof typeof multipliers] || 1)
+      }),
+    {
+      short: 'm',
+      description: 'Memory limit (e.g., 512m, 2g)'
+    }
+  ),
+  
+  // Parse key=value pairs
+  variables: option(
+    z.string()
+      .transform((val) => {
+        const vars: Record<string, string> = {}
+        val.split(',').forEach(pair => {
+          const [key, value] = pair.split('=')
+          if (key && value) {
+            vars[key.trim()] = value.trim()
+          }
+        })
+        return vars
+      })
+      .optional(),
+    {
+      short: 'v',
+      description: 'Variables (key1=value1,key2=value2)'
+    }
+  ),
+  
+  // Parse comma-separated list
+  targets: option(
+    z.string()
+      .optional()
+      .transform((val) => {
+        if (!val) return undefined
+        return val.split(',').map(t => t.trim())
+      }),
+    {
+      short: 't',
+      description: 'Target platforms (darwin-arm64,linux-x64)'
+    }
+  )
+}
+```
+
+**Source:** `examples/task-runner/commands/build.ts:29-82`, `packages/cli/src/commands/build.ts:56-63`
+
+## Complex Validation
+
+Combine multiple validation rules:
+
+```typescript
+options: {
+  branchName: option(
+    z.string()
+      .min(1, 'Branch name cannot be empty')
+      .regex(
+        /^[a-zA-Z0-9._/-]+$/,
+        'Can only contain letters, numbers, dots, underscores, hyphens, slashes'
+      )
+      .refine(
+        (value) => !value.startsWith('/') && !value.endsWith('/'),
+        'Cannot start or end with "/"'
+      )
+      .refine(
+        (value) => !value.includes('..'),
+        'Cannot include ".."'
+      ),
+    {
+      short: 'n',
+      description: 'Branch name'
+    }
+  )
+}
+```
+
+**Source:** `examples/git-tool/commands/branch.ts:10-20`
+
+## Type Inference
+
+Bunli automatically infers TypeScript types from your schemas:
+
+```typescript
+const buildCommand = defineCommand({
+  name: 'build',
+  options: {
+    env: option(z.enum(['dev', 'prod']).default('dev'), {}),
+    port: option(z.coerce.number().default(3000), {}),
+    watch: option(z.boolean().default(false), {}),
+    config: option(z.string().optional(), {})
+  },
+  handler: async ({ flags }) => {
+    // TypeScript knows:
+    // flags.env: 'dev' | 'prod'
+    // flags.port: number
+    // flags.watch: boolean
+    // flags.config: string | undefined
+    
+    console.log(flags.env)      // ✓ Type-safe
+    console.log(flags.invalid)  // ✗ Compile error
+  }
+})
+```
+
+## Accessing Options
+
+Options are available in the `flags` object:
+
+```typescript
+handler: async ({ flags, colors }) => {
+  // Direct access
+  const name = flags.name
+  const port = flags.port
+  
+  // With validation
+  if (flags.watch) {
+    console.log('Watching for changes...')
+  }
+  
+  // Optional handling
+  if (flags.config) {
+    console.log(`Using config: ${flags.config}`)
+  }
+}
+```
+
+## Positional Arguments
+
+Capture arguments that aren't flags:
+
+```typescript
+const runCommand = defineCommand({
+  name: 'run',
+  description: 'Run a script',
+  options: {
+    silent: option(z.boolean().default(false), {
+      description: 'Suppress output'
+    })
+  },
+  handler: async ({ flags, positional, shell }) => {
+    const [scriptName, ...args] = positional
+    
+    if (!scriptName) {
+      console.log('No script specified')
+      return
+    }
+    
+    // Run: cli run test --silent arg1 arg2
+    // scriptName: 'test'
+    // args: ['arg1', 'arg2']
+    // flags.silent: true
+    
+    await shell`./scripts/${scriptName} ${args}`
+  }
+})
+```
+
+## Passthrough Arguments
+
+Use `--` to pass arguments directly:
+
+```bash
+cli build --watch -- --experimental
+```
+
+```typescript
+handler: async ({ positional, shell }) => {
+  // Everything after -- appears in positional
+  // positional: ['--experimental']
+  
+  await shell`bun build ${positional}`
+}
+```
+
+**Source:** `packages/core/src/cli.ts:675-679`
+
+## Validation Errors
+
+Zod provides detailed error messages:
+
+```typescript
+options: {
+  port: option(
+    z.coerce.number()
+      .min(1000, 'Port must be at least 1000')
+      .max(65535, 'Port cannot exceed 65535'),
+    { description: 'Server port' }
+  )
+}
+```
+
+```bash
+# Invalid input
+$ cli start --port 500
+Validation Error:
+  port:
+    • Port must be at least 1000
+
+# Type error
+$ cli start --port abc
+Validation Error:
+  port:
+    • Expected number, received string
+```
+
+**Source:** `packages/core/src/cli.ts:465-483`
+
+## Standard Schema Support
+
+Bunli uses Standard Schema, which means any schema library that implements the spec will work:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+import { v } from 'valibot'  // Alternative to Zod
+
+const command = defineCommand({
+  name: 'example',
+  options: {
+    // Zod schema
+    name: option(z.string().default('world'), {}),
+    
+    // Valibot schema (also supported)
+    age: option(v.number(), {})
+  }
+})
+```
+
+**Source:** `packages/core/src/types.ts:1-3`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Defining Commands" icon="terminal" href="/guides/defining-commands">
+    Learn the fundamentals of command creation
+  </Card>
+  
+  <Card title="Command Groups" icon="folder-tree" href="/guides/command-groups">
+    Organize commands into nested hierarchies
+  </Card>
+  
+  <Card title="Type Generation" icon="code" href="/guides/type-generation">
+    Automatic type inference for your commands
+  </Card>
+  
+  <Card title="Building Binaries" icon="box" href="/guides/building-binaries">
+    Compile your CLI to standalone executables
+  </Card>
+</CardGroup>

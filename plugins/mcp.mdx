@@ -1,0 +1,527 @@
+---
+title: MCP Plugin
+description: Create CLI commands from Model Context Protocol tool schemas
+---
+
+## Overview
+
+The `@bunli/plugin-mcp` plugin converts [Model Context Protocol (MCP)](https://modelcontextprotocol.io) tool schemas into type-safe Bunli CLI commands. This enables:
+
+- Automatic command generation from MCP servers
+- Type-safe flag generation from JSON Schema
+- Integration with agentic workflows
+- Consistent CLI interface for MCP tools
+
+<Warning>
+The plugin is a **pure transformation layer** - it does NOT manage MCP connections. You provide the tools, and the plugin creates commands.
+</Warning>
+
+## Installation
+
+```bash
+bun add @bunli/plugin-mcp
+```
+
+## Core Concepts
+
+### MCP Tool Structure
+
+MCP tools follow this format:
+
+```typescript
+interface MCPTool {
+  name: string              // Tool name (e.g., "create_issue")
+  description?: string      // Human-readable description
+  inputSchema?: {          // JSON Schema for input parameters
+    type: 'object'
+    properties: Record<string, JSONSchema7>
+    required?: string[]
+  }
+}
+```
+
+### Conversion Flow
+
+```mermaid
+graph LR
+    A[MCP Tool Schema] --> B[JSON Schema → Zod]
+    B --> C[Zod → Bunli Options]
+    C --> D[Bunli Command]
+```
+
+## Usage
+
+### As a Plugin
+
+```typescript
+import { createCLI } from '@bunli/core'
+import { mcpPlugin } from '@bunli/plugin-mcp'
+import { createMCPClient } from './mcp-client.js'
+
+const client = await createMCPClient()
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    mcpPlugin({
+      // Fetch tools from your MCP client
+      toolsProvider: async (context) => {
+        const tools = await client.listTools()
+        return [{ namespace: 'linear', tools }]
+      },
+      
+      // Create handlers that call your MCP client
+      createHandler: (namespace, toolName) => async ({ flags }) => {
+        const result = await client.callTool(toolName, flags)
+        return result
+      }
+    })
+  ]
+})
+
+await cli.run()
+```
+
+### Runtime API
+
+Convert tools to commands programmatically:
+
+```typescript
+import { createCommandsFromMCPTools } from '@bunli/plugin-mcp'
+
+const tools = await yourMcpClient.listTools()
+
+const commandsResult = createCommandsFromMCPTools(tools, {
+  namespace: 'linear',
+  createHandler: (toolName) => async ({ flags }) => {
+    return yourMcpClient.callTool(toolName, flags)
+  }
+})
+
+if (commandsResult.isOk()) {
+  commandsResult.value.forEach(cmd => cli.command(cmd))
+}
+```
+
+### Builder API (Codegen)
+
+Generate command code for static CLIs:
+
+```typescript
+import { Commands } from '@bunli/plugin-mcp'
+import { writeFileSync } from 'fs'
+
+const tools = await yourMcpClient.listTools()
+
+const builder = Commands.from(tools)
+  .namespace('exa')
+  .timeout(30000)
+
+const template = `
+import { defineCommand } from '@bunli/core'
+
+${builder.commands()}
+
+export const commands = [
+  ${builder.registrations()}
+]
+`
+
+writeFileSync('commands.gen.ts', template)
+```
+
+## Plugin Options
+
+```typescript
+interface McpPluginOptions<TStore = Record<string, unknown>> {
+  /**
+   * Async function to get tools from your MCP client(s)
+   * Called during plugin setup
+   */
+  toolsProvider: (context: IPluginContext) => Promise<MCPToolGroup[]>
+
+  /**
+   * Factory function to create handlers for each tool
+   */
+  createHandler: (namespace: string, toolName: string) => Handler
+
+  /**
+   * Enable type generation
+   * - true: Generate to '.bunli' directory
+   * - { outputDir: string }: Generate to specified directory
+   */
+  sync?: boolean | { outputDir?: string }
+}
+
+interface MCPToolGroup {
+  namespace: string  // e.g., 'linear', 'github'
+  tools: MCPTool[]
+}
+```
+
+## Command Naming
+
+Tool names are automatically converted to CLI-friendly formats:
+
+| MCP Tool Name | CLI Command | Description |
+|---------------|-------------|-------------|
+| `create_issue` | `linear:create-issue` | snake_case → kebab-case |
+| `searchWeb` | `exa:search-web` | camelCase → kebab-case |
+| `list-repos` | `github:list-repos` | Already kebab-case |
+
+### Custom Naming
+
+```typescript
+createCommandsFromMCPTools(tools, {
+  namespace: 'linear',
+  commandName: (toolName) => {
+    // Custom transformation
+    return `linear-${toolName.toLowerCase()}`
+  }
+})
+```
+
+## Schema Conversion
+
+### JSON Schema → Zod
+
+The plugin converts JSON Schema to Zod schemas:
+
+```typescript
+// MCP Tool Input Schema
+{
+  type: 'object',
+  properties: {
+    title: {
+      type: 'string',
+      description: 'Issue title'
+    },
+    priority: {
+      type: 'number',
+      minimum: 1,
+      maximum: 5,
+      default: 3
+    },
+    labels: {
+      type: 'array',
+      items: { type: 'string' }
+    }
+  },
+  required: ['title']
+}
+
+// Generated Zod Schema
+z.object({
+  title: z.string(),              // Required
+  priority: z.number()
+    .min(1)
+    .max(5)
+    .default(3)
+    .optional(),                   // Not required, has default
+  labels: z.array(z.string())
+    .optional()                    // Not required
+})
+```
+
+### Supported Schema Types
+
+| JSON Schema Type | Zod Type | Notes |
+|------------------|----------|-------|
+| `string` | `z.string()` | With min/max length, pattern |
+| `number` | `z.number()` | With min/max, multipleOf |
+| `integer` | `z.number().int()` | Integer validation |
+| `boolean` | `z.boolean()` | True/false values |
+| `array` | `z.array()` | With min/max items |
+| `object` | `z.object()` | Nested objects |
+| `enum` | `z.enum()` | Enumerated values |
+
+## Flag Generation
+
+JSON Schema properties become CLI flags:
+
+```typescript
+// Schema property
+{
+  priority: {
+    type: 'number',
+    description: '[-p] Priority level',
+    minimum: 1,
+    maximum: 5
+  }
+}
+
+// Generated flag
+options: {
+  priority: option(z.number().min(1).max(5), {
+    description: 'Priority level',
+    short: 'p'  // Extracted from description
+  })
+}
+
+// CLI usage
+linear:create-issue --priority 3
+linear:create-issue -p 3
+```
+
+### Short Flags
+
+Extract short flags from descriptions:
+
+```typescript
+// Pattern: "[-X] Description"
+"[-t] Issue title"       → short: 't'
+"[-p] Priority level"    → short: 'p'
+"Title of the issue"     → no short flag
+```
+
+## Real-World Examples
+
+### Linear Integration
+
+```typescript
+import { createCLI } from '@bunli/core'
+import { mcpPlugin } from '@bunli/plugin-mcp'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+
+// Create MCP client
+const transport = new StdioClientTransport({
+  command: 'npx',
+  args: ['-y', '@modelcontextprotocol/server-linear']
+})
+
+const client = new Client({
+  name: 'my-cli',
+  version: '1.0.0'
+}, {
+  capabilities: {}
+})
+
+await client.connect(transport)
+
+// Create CLI with MCP plugin
+const cli = await createCLI({
+  name: 'linear-cli',
+  plugins: [
+    mcpPlugin({
+      toolsProvider: async () => {
+        const result = await client.listTools()
+        return [{
+          namespace: 'linear',
+          tools: result.tools
+        }]
+      },
+      createHandler: (namespace, toolName) => async ({ flags }) => {
+        const result = await client.callTool({
+          name: toolName,
+          arguments: flags
+        })
+        console.log(JSON.stringify(result.content, null, 2))
+      }
+    })
+  ]
+})
+
+await cli.run()
+```
+
+Now you can use:
+
+```bash
+linear-cli linear:create-issue --title "Fix bug" --priority 1
+linear-cli linear:search-issues --query "bug" --limit 10
+```
+
+### Multiple MCP Servers
+
+```typescript
+mcpPlugin({
+  toolsProvider: async () => {
+    const linearTools = await linearClient.listTools()
+    const githubTools = await githubClient.listTools()
+    
+    return [
+      { namespace: 'linear', tools: linearTools.tools },
+      { namespace: 'github', tools: githubTools.tools }
+    ]
+  },
+  createHandler: (namespace, toolName) => async ({ flags }) => {
+    if (namespace === 'linear') {
+      return linearClient.callTool({ name: toolName, arguments: flags })
+    }
+    if (namespace === 'github') {
+      return githubClient.callTool({ name: toolName, arguments: flags })
+    }
+  }
+})
+```
+
+### Type Generation
+
+Generate TypeScript types for enhanced DX:
+
+```typescript
+mcpPlugin({
+  toolsProvider: async () => { /* ... */ },
+  createHandler: (ns, tool) => { /* ... */ },
+  
+  // Enable type generation
+  sync: true  // Generates to .bunli/
+  // OR
+  sync: { outputDir: 'src/generated' }
+})
+```
+
+Generated types:
+
+```typescript
+// .bunli/mcp-types.ts
+export interface LinearCreateIssueArgs {
+  title: string
+  priority?: number
+  labels?: string[]
+}
+
+export interface LinearSearchIssuesArgs {
+  query: string
+  limit?: number
+}
+```
+
+## API Reference
+
+### createCommandsFromMCPTools
+
+Convert MCP tools to commands:
+
+```typescript
+function createCommandsFromMCPTools<TStore>(
+  tools: MCPTool[],
+  options: ConvertOptions<TStore>
+): Result<MCPCommand<TStore>[], ConvertToolsError>
+```
+
+### extractCommandMetadata
+
+Extract metadata without creating commands:
+
+```typescript
+function extractCommandMetadata(
+  tool: MCPTool,
+  namespace?: string
+): MCPCommandMetadata
+```
+
+### generateMCPTypes
+
+Generate TypeScript types:
+
+```typescript
+function generateMCPTypes(
+  options: GenerateTypesOptions
+): Promise<Result<void, GenerateMCPTypesError>>
+```
+
+## Error Handling
+
+```typescript
+import { Result } from 'better-result'
+import { ConvertToolsError } from '@bunli/plugin-mcp'
+
+const result = createCommandsFromMCPTools(tools, options)
+
+if (Result.isError(result)) {
+  if (ConvertToolsError.is(result.error)) {
+    console.error('Failed to convert tool:', result.error.toolName)
+    console.error('Reason:', result.error.message)
+  }
+} else {
+  const commands = result.value
+  // Use commands...
+}
+```
+
+## Testing
+
+Test MCP command conversion:
+
+```typescript
+import { describe, test, expect } from 'bun:test'
+import { createCommandsFromMCPTools } from '@bunli/plugin-mcp'
+
+describe('MCP Tool Conversion', () => {
+  test('converts tool to command', () => {
+    const tool = {
+      name: 'create_issue',
+      description: 'Create a new issue',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          title: { type: 'string' as const }
+        },
+        required: ['title']
+      }
+    }
+    
+    const result = createCommandsFromMCPTools([tool], {
+      namespace: 'linear',
+      createHandler: () => async () => {}
+    })
+    
+    expect(result.isOk()).toBe(true)
+    const commands = result.value!
+    expect(commands).toHaveLength(1)
+    expect(commands[0].name).toBe('linear:create-issue')
+  })
+})
+```
+
+## Best Practices
+
+### Connection Management
+
+- Initialize MCP clients outside the plugin
+- Handle connection errors gracefully
+- Provide helpful error messages
+
+### Namespacing
+
+- Use server names as namespaces
+- Keep namespaces short and memorable
+- Document available namespaces
+
+### Handler Design
+
+- Keep handlers thin - delegate to MCP client
+- Format output consistently
+- Include error context
+
+### Type Generation
+
+- Enable for better DX during development
+- Commit generated types for published CLIs
+- Regenerate after schema changes
+
+## Limitations
+
+- Does not manage MCP connections (by design)
+- Requires JSON Schema for type conversion
+- Complex schemas may need manual handling
+- No support for streaming responses yet
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="MCP Protocol" icon="link" href="https://modelcontextprotocol.io">
+    Learn about Model Context Protocol
+  </Card>
+  <Card title="Creating Plugins" icon="code" href="/plugins/creating-plugins">
+    Build your own plugins
+  </Card>
+  <Card title="Commands" icon="terminal" href="/concepts/commands">
+    Learn about command definitions
+  </Card>
+  <Card title="Type Safety" icon="shield" href="/guides/typescript">
+    Master type-safe patterns
+  </Card>
+</CardGroup>

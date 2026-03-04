@@ -1,0 +1,393 @@
+---
+title: 'Error Classes'
+description: 'Error types and error handling patterns in Bunli'
+---
+
+## Overview
+
+Bunli uses the `better-result` library's `TaggedError` pattern for type-safe error handling. All errors are strongly typed and carry contextual information for debugging.
+
+## Error Pattern
+
+Bunli errors extend `TaggedError` from the `better-result` library:
+
+```typescript
+import { TaggedError } from 'better-result'
+
+export class MyError extends TaggedError('MyError')<{
+  message: string
+  context?: string
+}>() {}
+```
+
+This pattern provides:
+- **Type safety**: Errors are typed and can be discriminated
+- **Context**: Each error carries structured metadata
+- **Pattern matching**: Use with Result types for functional error handling
+
+## Plugin Errors
+
+Defined in `packages/core/src/plugin/errors.ts`
+
+### `PluginLoadError`
+
+Thrown when a plugin fails to load.
+
+```typescript
+export class PluginLoadError extends TaggedError('PluginLoadError')<{
+  message: string
+  plugin: string
+  cause: unknown
+}>() {}
+```
+
+**Properties:**
+- `message`: Error description
+- `plugin`: Name of the plugin that failed to load
+- `cause`: Original error that caused the failure
+
+**Example:**
+
+```typescript
+import { PluginLoadError } from '@bunli/core'
+
+try {
+  await loadPlugin('./my-plugin.js')
+} catch (error) {
+  if (error instanceof PluginLoadError) {
+    console.error(`Failed to load plugin: ${error.plugin}`)
+    console.error(`Reason: ${error.message}`)
+    console.error(`Cause:`, error.cause)
+  }
+}
+```
+
+### `PluginValidationError`
+
+Thrown when a plugin fails validation checks.
+
+```typescript
+export class PluginValidationError extends TaggedError('PluginValidationError')<{
+  message: string
+  plugin: string
+}>() {}
+```
+
+**Properties:**
+- `message`: Validation error description
+- `plugin`: Name of the invalid plugin
+
+**Example:**
+
+```typescript
+import { PluginValidationError } from '@bunli/core'
+
+try {
+  validatePlugin(myPlugin)
+} catch (error) {
+  if (error instanceof PluginValidationError) {
+    console.error(`Invalid plugin: ${error.plugin}`)
+    console.error(`Error: ${error.message}`)
+  }
+}
+```
+
+### `PluginHookError`
+
+Thrown when a plugin hook execution fails.
+
+```typescript
+export class PluginHookError extends TaggedError('PluginHookError')<{
+  message: string
+  plugin: string
+  hook: 'setup' | 'beforeCommand'
+  cause: unknown
+}>() {}
+```
+
+**Properties:**
+- `message`: Error description
+- `plugin`: Name of the plugin
+- `hook`: Which hook failed (`'setup'` or `'beforeCommand'`)
+- `cause`: Original error
+
+**Example:**
+
+```typescript
+import { PluginHookError } from '@bunli/core'
+
+try {
+  await plugin.setup?.(config)
+} catch (error) {
+  if (error instanceof PluginHookError) {
+    console.error(`Plugin ${error.plugin} failed in ${error.hook} hook`)
+    console.error(`Reason:`, error.cause)
+  }
+}
+```
+
+## CLI Errors
+
+Defined in `packages/core/src/cli.ts`
+
+### `InvalidConfigError`
+
+Thrown when CLI configuration is invalid.
+
+```typescript
+export class InvalidConfigError extends TaggedError('InvalidConfigError')<{
+  message: string
+  cause: unknown
+}>() {}
+```
+
+**Example:**
+
+```typescript
+import { InvalidConfigError } from '@bunli/core'
+
+try {
+  const cli = await createCLI({
+    name: '',  // Invalid: empty name
+    version: '1.0.0'
+  })
+} catch (error) {
+  if (error instanceof InvalidConfigError) {
+    console.error('Configuration error:', error.message)
+  }
+}
+```
+
+### `CommandNotFoundError`
+
+Thrown when a command cannot be found.
+
+```typescript
+export class CommandNotFoundError extends TaggedError('CommandNotFoundError')<{
+  message: string
+  command: string
+}>() {}
+```
+
+**Properties:**
+- `message`: Error description
+- `command`: The command name that wasn't found
+
+**Example:**
+
+```typescript
+import { CommandNotFoundError } from '@bunli/core'
+
+try {
+  await cli.execute('nonexistent-command')
+} catch (error) {
+  if (error instanceof CommandNotFoundError) {
+    console.error(`Command '${error.command}' not found`)
+  }
+}
+```
+
+### `CommandExecutionError`
+
+Thrown when a command fails during execution.
+
+```typescript
+export class CommandExecutionError extends TaggedError('CommandExecutionError')<{
+  message: string
+  command: string
+  cause: unknown
+}>() {}
+```
+
+**Properties:**
+- `message`: Error description
+- `command`: The command that failed
+- `cause`: Original error that caused the failure
+
+**Example:**
+
+```typescript
+import { CommandExecutionError } from '@bunli/core'
+
+try {
+  await cli.execute('build', { env: 'invalid' })
+} catch (error) {
+  if (error instanceof CommandExecutionError) {
+    console.error(`Command '${error.command}' failed`)
+    console.error('Cause:', error.cause)
+  }
+}
+```
+
+### `OptionValidationError`
+
+Thrown when an option fails validation.
+
+```typescript
+export class OptionValidationError extends TaggedError('OptionValidationError')<{
+  message: string
+  command: string
+  option: string
+  cause: unknown
+}>() {}
+```
+
+**Properties:**
+- `message`: Error description
+- `command`: The command name
+- `option`: The option that failed validation
+- `cause`: Original validation error
+
+**Example:**
+
+```typescript
+import { OptionValidationError } from '@bunli/core'
+
+try {
+  await cli.execute('start', { port: 'not-a-number' })
+} catch (error) {
+  if (error instanceof OptionValidationError) {
+    console.error(`Invalid option '${error.option}' for command '${error.command}'`)
+    console.error('Reason:', error.message)
+  }
+}
+```
+
+## Config Errors
+
+Defined in `packages/core/src/config-loader.ts`
+
+### `ConfigLoadError`
+
+Thrown when configuration file fails to load.
+
+```typescript
+export class ConfigLoadError extends TaggedError('ConfigLoadError')<{
+  message: string
+  path: string
+  cause: unknown
+}>() {}
+```
+
+### `ConfigNotFoundError`
+
+Thrown when no configuration file is found.
+
+```typescript
+export class ConfigNotFoundError extends TaggedError('ConfigNotFoundError')<{
+  message: string
+  searchPaths: string[]
+}>() {}
+```
+
+## Error Handling Patterns
+
+### Pattern 1: Type Narrowing
+
+Use `instanceof` to narrow error types:
+
+```typescript
+import { CommandNotFoundError, CommandExecutionError } from '@bunli/core'
+
+try {
+  await cli.execute('build')
+} catch (error) {
+  if (error instanceof CommandNotFoundError) {
+    console.error('Command not found:', error.command)
+  } else if (error instanceof CommandExecutionError) {
+    console.error('Execution failed:', error.message)
+  } else {
+    console.error('Unknown error:', error)
+  }
+}
+```
+
+### Pattern 2: Result Types
+
+Use with `Result` from `better-result` for functional error handling:
+
+```typescript
+import { Result } from 'better-result'
+import { CommandExecutionError } from '@bunli/core'
+
+async function runCommand(): Promise<Result<void, CommandExecutionError>> {
+  try {
+    await cli.execute('build')
+    return Result.ok(undefined)
+  } catch (error) {
+    if (error instanceof CommandExecutionError) {
+      return Result.err(error)
+    }
+    return Result.err(new CommandExecutionError({
+      message: String(error),
+      command: 'build',
+      cause: error
+    }))
+  }
+}
+
+const result = await runCommand()
+if (result.isErr()) {
+  console.error('Build failed:', result.error.message)
+}
+```
+
+### Pattern 3: Error Context
+
+Access structured error context:
+
+```typescript
+import { PluginHookError } from '@bunli/core'
+
+try {
+  await runPluginHooks()
+} catch (error) {
+  if (error instanceof PluginHookError) {
+    // Access all error properties
+    const { plugin, hook, cause, message } = error
+    
+    console.error(`Plugin Error Details:`)
+    console.error(`  Plugin: ${plugin}`)
+    console.error(`  Hook: ${hook}`)
+    console.error(`  Message: ${message}`)
+    console.error(`  Original Error:`, cause)
+  }
+}
+```
+
+## Creating Custom Errors
+
+For your own CLI, follow the TaggedError pattern:
+
+```typescript
+import { TaggedError } from 'better-result'
+
+export class DatabaseError extends TaggedError('DatabaseError')<{
+  message: string
+  query: string
+  cause?: unknown
+}>() {}
+
+export class NetworkError extends TaggedError('NetworkError')<{
+  message: string
+  url: string
+  statusCode?: number
+}>() {}
+
+// Usage
+try {
+  await fetchData('https://api.example.com')
+} catch (error) {
+  throw new NetworkError({
+    message: 'Failed to fetch data',
+    url: 'https://api.example.com',
+    statusCode: 500
+  })
+}
+```
+
+## See Also
+
+- [Validation API](/api/utils/validation) - Validation utilities
+- [Plugin API](/api/plugin) - Plugin system
+- [CLI API](/api/cli) - CLI creation and management

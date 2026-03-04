@@ -1,0 +1,568 @@
+---
+title: Configuration
+description: Configure your Bunli CLI with bunli.config.ts and type-safe options
+---
+
+Bunli uses a configuration file to define CLI metadata, build settings, plugins, and more. The config is validated at runtime using Zod schemas for type safety.
+
+## Configuration File
+
+Create a `bunli.config.ts` file in your project root:
+
+```typescript
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'my-cli',
+  version: '1.0.0',
+  description: 'A powerful CLI tool',
+  
+  commands: {
+    entry: './cli.ts',
+    directory: './commands'
+  },
+  
+  build: {
+    entry: 'cli.ts',
+    outdir: 'dist',
+    targets: ['native'],
+    minify: true
+  },
+  
+  plugins: []
+})
+```
+
+<Note>
+Bunli also supports `bunli.config.js` and `bunli.config.mjs` for JavaScript projects.
+</Note>
+
+## defineConfig
+
+The `defineConfig` function provides type safety and IntelliSense:
+
+```typescript
+import { defineConfig } from '@bunli/core'
+import type { BunliConfigInput } from '@bunli/core'
+
+const config: BunliConfigInput = {
+  // TypeScript will validate this
+}
+
+export default defineConfig(config)
+```
+
+## Configuration Options
+
+### Basic Metadata
+
+<ParamField path="name" type="string" required>
+  CLI name shown in help output and package.json.
+  
+  ```typescript
+  name: 'my-cli'
+  ```
+</ParamField>
+
+<ParamField path="version" type="string" required>
+  CLI version (usually from package.json).
+  
+  ```typescript
+  version: '1.0.0'
+  ```
+</ParamField>
+
+<ParamField path="description" type="string">
+  Brief description of your CLI.
+  
+  ```typescript
+  description: 'A modern CLI tool for developers'
+  ```
+</ParamField>
+
+### Commands Configuration
+
+<ParamField path="commands" type="object">
+  Commands discovery and generation settings.
+  
+  <ParamField path="commands.entry" type="string">
+    Entry point file for your CLI.
+    ```typescript
+    entry: './cli.ts'
+    ```
+  </ParamField>
+  
+  <ParamField path="commands.directory" type="string">
+    Directory containing command files.
+    ```typescript
+    directory: './commands'
+    ```
+  </ParamField>
+  
+  <ParamField path="commands.generateReport" type="boolean">
+    Generate a commands report during type generation.
+    ```typescript
+    generateReport: true
+    ```
+  </ParamField>
+</ParamField>
+
+### Build Configuration
+
+<ParamField path="build" type="object">
+  Build and compilation settings.
+  
+  <ParamField path="build.entry" type="string | string[]">
+    Entry point(s) for building.
+    ```typescript
+    entry: 'cli.ts'
+    // or multiple entries
+    entry: ['cli.ts', 'server.ts']
+    ```
+  </ParamField>
+  
+  <ParamField path="build.outdir" type="string">
+    Output directory for built files.
+    ```typescript
+    outdir: 'dist'
+    ```
+  </ParamField>
+  
+  <ParamField path="build.targets" type="string[]">
+    Build targets (e.g., `'native'`, `'bun-linux-x64'`, `'bun-darwin-arm64'`).
+    ```typescript
+    targets: ['native']  // Current platform
+    targets: ['bun-linux-x64', 'bun-darwin-arm64']  // Cross-platform
+    ```
+  </ParamField>
+  
+  <ParamField path="build.compress" type="boolean" default="false">
+    Compress output binaries.
+    ```typescript
+    compress: true
+    ```
+  </ParamField>
+  
+  <ParamField path="build.minify" type="boolean" default="false">
+    Minify JavaScript output.
+    ```typescript
+    minify: true
+    ```
+  </ParamField>
+  
+  <ParamField path="build.external" type="string[]">
+    External dependencies to exclude from bundle.
+    ```typescript
+    external: ['@bunli/core', 'zod']
+    ```
+  </ParamField>
+  
+  <ParamField path="build.sourcemap" type="boolean" default="true">
+    Generate source maps.
+    ```typescript
+    sourcemap: false
+    ```
+  </ParamField>
+</ParamField>
+
+### Development Configuration
+
+<ParamField path="dev" type="object">
+  Development mode settings.
+  
+  <ParamField path="dev.watch" type="boolean" default="true">
+    Enable file watching.
+    ```typescript
+    watch: true
+    ```
+  </ParamField>
+  
+  <ParamField path="dev.inspect" type="boolean" default="false">
+    Enable debugging.
+    ```typescript
+    inspect: true
+    ```
+  </ParamField>
+  
+  <ParamField path="dev.port" type="number">
+    Port for dev server (if applicable).
+    ```typescript
+    port: 3000
+    ```
+  </ParamField>
+</ParamField>
+
+### Test Configuration
+
+<ParamField path="test" type="object">
+  Test execution settings.
+  
+  <ParamField path="test.pattern" type="string | string[]" default="['**/*.test.ts', '**/*.spec.ts']">
+    Test file patterns.
+    ```typescript
+    pattern: ['**/*.test.ts', '**/*.spec.ts']
+    ```
+  </ParamField>
+  
+  <ParamField path="test.coverage" type="boolean" default="false">
+    Enable coverage reporting.
+    ```typescript
+    coverage: true
+    ```
+  </ParamField>
+  
+  <ParamField path="test.watch" type="boolean" default="false">
+    Run tests in watch mode.
+    ```typescript
+    watch: true
+    ```
+  </ParamField>
+</ParamField>
+
+### Workspace Configuration
+
+<ParamField path="workspace" type="object">
+  Monorepo and workspace settings.
+  
+  <ParamField path="workspace.packages" type="string[]">
+    Workspace package patterns.
+    ```typescript
+    packages: ['packages/*', 'apps/*']
+    ```
+  </ParamField>
+  
+  <ParamField path="workspace.versionStrategy" type="'fixed' | 'independent'" default="'fixed'">
+    Versioning strategy for workspace packages.
+    ```typescript
+    versionStrategy: 'independent'
+    ```
+  </ParamField>
+  
+  <ParamField path="workspace.shared" type="unknown">
+    Shared workspace configuration.
+  </ParamField>
+</ParamField>
+
+### Release Configuration
+
+<ParamField path="release" type="object">
+  Publishing and release settings.
+  
+  <ParamField path="release.npm" type="boolean" default="true">
+    Publish to npm.
+    ```typescript
+    npm: true
+    ```
+  </ParamField>
+  
+  <ParamField path="release.github" type="boolean" default="false">
+    Create GitHub releases.
+    ```typescript
+    github: true
+    ```
+  </ParamField>
+  
+  <ParamField path="release.tagFormat" type="string" default="'v{{version}}'">
+    Git tag format.
+    ```typescript
+    tagFormat: 'v{{version}}'
+    ```
+  </ParamField>
+  
+  <ParamField path="release.conventionalCommits" type="boolean" default="true">
+    Use conventional commits for changelog.
+    ```typescript
+    conventionalCommits: true
+    ```
+  </ParamField>
+  
+  <ParamField path="release.binary" type="object">
+    Binary publishing configuration (per-platform packages).
+    
+    <ParamField path="release.binary.packageNameFormat" type="string" default="'{{name}}-{{platform}}'">
+      Format for platform-specific package names.
+      ```typescript
+      packageNameFormat: '{{name}}-{{platform}}'
+      ```
+    </ParamField>
+    
+    <ParamField path="release.binary.shimPath" type="string" default="'bin/run.mjs'">
+      Path to platform shim.
+      ```typescript
+      shimPath: 'bin/run.mjs'
+      ```
+    </ParamField>
+  </ParamField>
+</ParamField>
+
+### Plugin Configuration
+
+<ParamField path="plugins" type="PluginConfig[]" default="[]">
+  Array of plugins to load.
+  
+  ```typescript
+  import { defineConfig } from '@bunli/core'
+  import metricsPlugin from './plugins/metrics'
+  
+  export default defineConfig({
+    plugins: [
+      metricsPlugin({ enabled: true })
+    ]
+  })
+  ```
+  
+  See [Plugins](/guides/plugins) for details.
+</ParamField>
+
+### TUI Configuration
+
+<ParamField path="tui" type="object">
+  Terminal UI rendering settings.
+  
+  <ParamField path="tui.renderer" type="object">
+    Renderer configuration.
+    
+    <ParamField path="tui.renderer.bufferMode" type="'alternate' | 'standard'">
+      Terminal buffer mode.
+      - `alternate`: Full-screen alternate buffer (like vim)
+      - `standard`: Render in main buffer (scrollback-friendly)
+      
+      ```typescript
+      tui: {
+        renderer: {
+          bufferMode: 'alternate'
+        }
+      }
+      ```
+    </ParamField>
+  </ParamField>
+</ParamField>
+
+### Help Configuration
+
+<ParamField path="help" type="object">
+  Custom help rendering.
+  
+  <ParamField path="help.renderer" type="HelpRenderer">
+    Custom help renderer function.
+    
+    ```typescript
+    import type { HelpRenderer } from '@bunli/core'
+    
+    const customHelp: HelpRenderer = (context) => {
+      console.log(`${context.cliName} v${context.version}`)
+      // Custom help formatting
+    }
+    
+    export default defineConfig({
+      help: {
+        renderer: customHelp
+      }
+    })
+    ```
+  </ParamField>
+</ParamField>
+
+## Loading Configuration
+
+Bunli automatically loads configuration from your project root:
+
+```typescript
+import { loadConfig, loadConfigResult } from '@bunli/core'
+
+// Load config (throws on error)
+const config = await loadConfig()
+
+// Load config with Result type (better-result pattern)
+const result = await loadConfigResult()
+if (result.isOk()) {
+  const config = result.value
+} else {
+  const error = result.error
+  // Handle ConfigNotFoundError or ConfigLoadError
+}
+```
+
+### Config Loading Order
+
+Bunli searches for config files in this order:
+1. `bunli.config.ts`
+2. `bunli.config.js`
+3. `bunli.config.mjs`
+
+## Real-World Examples
+
+<Tabs>
+  <Tab title="Simple CLI">
+    ```typescript
+    import { defineConfig } from '@bunli/core'
+    
+    export default defineConfig({
+      name: 'my-cli',
+      version: '1.0.0',
+      description: 'A simple CLI tool',
+      
+      commands: {
+        entry: './cli.ts'
+      },
+      
+      build: {
+        entry: 'cli.ts',
+        outdir: 'dist',
+        targets: ['native']
+      }
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Development Server">
+    ```typescript
+    import { defineConfig } from '@bunli/core'
+    
+    export default defineConfig({
+      name: 'dev-server',
+      version: '0.0.1',
+      description: 'Development server with plugins',
+      
+      commands: {
+        entry: './cli.ts',
+        directory: './commands'
+      },
+      
+      build: {
+        entry: 'cli.ts',
+        outdir: 'dist',
+        targets: ['native'],
+        minify: true,
+        sourcemap: false
+      },
+      
+      dev: {
+        watch: true,
+        inspect: false
+      },
+      
+      test: {
+        pattern: ['**/*.test.ts'],
+        coverage: true
+      }
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Production CLI">
+    ```typescript
+    import { defineConfig } from '@bunli/core'
+    import completionsPlugin from '@bunli/plugin-completions'
+    
+    export default defineConfig({
+      name: 'prod-cli',
+      version: '2.1.0',
+      description: 'Production-ready CLI',
+      
+      commands: {
+        entry: './src/cli.ts',
+        directory: './src/commands',
+        generateReport: true
+      },
+      
+      build: {
+        entry: 'src/cli.ts',
+        outdir: 'dist',
+        targets: [
+          'bun-linux-x64',
+          'bun-darwin-arm64',
+          'bun-windows-x64'
+        ],
+        compress: true,
+        minify: true,
+        external: ['@bunli/core']
+      },
+      
+      release: {
+        npm: true,
+        github: true,
+        conventionalCommits: true,
+        binary: {
+          packageNameFormat: '{{name}}-{{platform}}',
+          shimPath: 'bin/run.mjs'
+        }
+      },
+      
+      plugins: [
+        completionsPlugin()
+      ]
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## Type-Safe Configuration
+
+Bunli validates your configuration at runtime:
+
+```typescript
+import { bunliConfigSchema } from '@bunli/core'
+import { z } from 'zod'
+
+// Get the TypeScript type
+type BunliConfig = z.infer<typeof bunliConfigSchema>
+
+// Validate a config object
+const result = bunliConfigSchema.safeParse(myConfig)
+if (!result.success) {
+  console.error(result.error)
+}
+```
+
+## Overriding Configuration
+
+You can override config when creating a CLI:
+
+```typescript
+import { createCLI } from '@bunli/core'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  version: '1.0.0',
+  // Overrides bunli.config.ts
+})
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use TypeScript for config">
+    TypeScript provides IntelliSense and type checking.
+    ```typescript
+    // bunli.config.ts (recommended)
+    export default defineConfig({ /* ... */ })
+    ```
+  </Step>
+  
+  <Step title="Keep config minimal">
+    Only configure what you need. Bunli provides sensible defaults.
+  </Step>
+  
+  <Step title="Use environment variables">
+    Don't hardcode secrets in config files.
+    ```typescript
+    export default defineConfig({
+      plugins: [
+        apiPlugin({ apiKey: process.env.API_KEY })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step title="Validate plugin options">
+    Use Zod schemas to validate plugin configuration.
+  </Step>
+</Steps>
+
+## See Also
+
+- [Commands](/concepts/commands) - Define CLI commands
+- [Plugins](/guides/plugins) - Extend Bunli with plugins
+- [Building](/guides/building) - Build and distribute your CLI
+- [Configuration API](/api/config) - Configuration utilities

@@ -1,0 +1,317 @@
+---
+title: Defining Commands
+description: Learn how to define type-safe CLI commands with options, handlers, and validation
+---
+
+Commands are the building blocks of your CLI. Bunli provides a type-safe `defineCommand` function that gives you full IntelliSense and compile-time validation.
+
+## Basic Command Structure
+
+Every command needs a name, description, and either a handler or render function:
+
+```typescript
+import { defineCommand } from '@bunli/core'
+
+const greetCommand = defineCommand({
+  name: 'greet',
+  description: 'A simple greeting command',
+  handler: async ({ flags }) => {
+    console.log('Hello, world!')
+  }
+})
+```
+
+## Command with Options
+
+Add options to make your commands configurable:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+const greetCommand = defineCommand({
+  name: 'greet',
+  description: 'Greet someone by name',
+  options: {
+    name: option(
+      z.string().default('world'),
+      { 
+        short: 'n',
+        description: 'Name to greet'
+      }
+    ),
+    loud: option(
+      z.coerce.boolean().default(false),
+      {
+        short: 'l',
+        description: 'Shout the greeting'
+      }
+    )
+  },
+  handler: async ({ flags }) => {
+    const greeting = `Hello, ${flags.name}!`
+    console.log(flags.loud ? greeting.toUpperCase() : greeting)
+  }
+})
+
+export default greetCommand
+```
+
+**Source:** `examples/hello-world/commands/greet.tsx`
+
+## Handler Arguments
+
+The handler function receives a rich context object:
+
+```typescript
+handler: async ({
+  flags,        // Validated command options
+  positional,   // Positional arguments
+  shell,        // Bun.$ for running shell commands
+  env,          // process.env
+  cwd,          // Current working directory
+  prompt,       // Interactive prompts
+  spinner,      // Loading spinners
+  colors,       // Terminal colors
+  context,      // Plugin context (if plugins loaded)
+  terminal,     // Terminal info (width, height, etc.)
+  runtime,      // Runtime info (startTime, args, etc.)
+  signal        // AbortSignal for cancellation
+}) => {
+  // Your command logic here
+}
+```
+
+**Source:** `packages/core/src/types.ts:128-149`
+
+## Using Shell Commands
+
+The `shell` argument provides Bun's shell execution:
+
+```typescript
+import { defineCommand } from '@bunli/core'
+
+const statusCommand = defineCommand({
+  name: 'status',
+  description: 'Show git status',
+  handler: async ({ shell, colors }) => {
+    try {
+      const { stdout } = await shell`git status --porcelain`
+      const { stdout: branch } = await shell`git branch --show-current`
+      
+      console.log(`Branch: ${colors.cyan(branch.toString().trim())}`)
+      
+      if (stdout.toString().trim()) {
+        console.log('Changes detected')
+      } else {
+        console.log(colors.green('Working directory clean'))
+      }
+    } catch (error) {
+      console.error(colors.red(`Error: ${error.message}`))
+    }
+  }
+})
+
+export default statusCommand
+```
+
+**Source:** `examples/git-tool/commands/status.ts:50-89`
+
+## Interactive Prompts
+
+Use the `prompt` API for user input:
+
+```typescript
+import { defineCommand } from '@bunli/core'
+
+const deployCommand = defineCommand({
+  name: 'deploy',
+  description: 'Deploy your application',
+  handler: async ({ prompt, spinner, colors }) => {
+    const environment = await prompt.select({
+      message: 'Select environment',
+      options: [
+        { label: 'Development', value: 'dev' },
+        { label: 'Staging', value: 'staging' },
+        { label: 'Production', value: 'prod' }
+      ]
+    })
+    
+    const confirmed = await prompt.confirm({
+      message: `Deploy to ${environment}?`,
+      default: false
+    })
+    
+    if (!confirmed) {
+      console.log('Deployment cancelled')
+      return
+    }
+    
+    const spin = spinner('Deploying...')
+    // Deployment logic here
+    spin.succeed('Deployed successfully!')
+  }
+})
+
+export default deployCommand
+```
+
+## Spinners for Long Operations
+
+```typescript
+import { defineCommand } from '@bunli/core'
+
+const buildCommand = defineCommand({
+  name: 'build',
+  description: 'Build the project',
+  handler: async ({ spinner, colors }) => {
+    const spin = spinner('Building project...')
+    
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      spin.update('Compiling TypeScript...')
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      spin.update('Bundling assets...')
+      await new Promise(resolve => setTimeout(resolve, 800))
+      
+      spin.succeed('Build completed!')
+      console.log(colors.green('✓ All tasks finished'))
+    } catch (error) {
+      spin.fail('Build failed')
+      throw error
+    }
+  }
+})
+
+export default buildCommand
+```
+
+**Source:** `examples/task-runner/commands/build.ts:94-112`
+
+## TUI Rendering
+
+Commands can also render interactive terminal UIs:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { ProgressBar } from '@bunli/tui'
+import { useState, useEffect } from 'react'
+import { z } from 'zod'
+
+function BuildProgress({ name }: { name: string }) {
+  const [progress, setProgress] = useState(0)
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setProgress(current => {
+        if (current >= 100) return 100
+        return current + 5
+      })
+    }, 80)
+    return () => clearInterval(interval)
+  }, [])
+  
+  return <ProgressBar value={progress} label={`Building ${name}...`} />
+}
+
+const buildCommand = defineCommand({
+  name: 'build',
+  description: 'Build with progress',
+  options: {
+    name: option(z.string().default('project'), {
+      description: 'Project name'
+    })
+  },
+  render: ({ flags }) => <BuildProgress name={flags.name} />,
+  handler: async ({ flags }) => {
+    // Fallback for non-interactive terminals
+    console.log(`Building ${flags.name}...`)
+  }
+})
+
+export default buildCommand
+```
+
+**Source:** `examples/hello-world/commands/greet.tsx:6-57`
+
+## Type-Safe Command Names
+
+Use `as const` to enable type inference:
+
+```typescript
+const greetCommand = defineCommand({
+  name: 'greet' as const,  // ← Enables type inference
+  description: 'Greet someone',
+  options: {
+    name: option(z.string().default('world'), {
+      description: 'Name to greet'
+    })
+  },
+  handler: async ({ flags }) => {
+    console.log(`Hello, ${flags.name}!`)
+  }
+})
+
+export default greetCommand
+```
+
+## Command Aliases
+
+Provide shortcuts for frequently used commands:
+
+```typescript
+const statusCommand = defineCommand({
+  name: 'status',
+  alias: 'st',  // Single alias
+  description: 'Show status'
+})
+
+const branchCommand = defineCommand({
+  name: 'branch',
+  alias: ['br', 'b'],  // Multiple aliases
+  description: 'Manage branches'
+})
+```
+
+**Source:** `examples/git-tool/commands/status.ts:7`, `examples/git-tool/commands/branch.ts:7`
+
+## Registering Commands
+
+Register your commands with the CLI instance:
+
+```typescript
+import { createCLI } from '@bunli/core'
+import greetCommand from './commands/greet.js'
+import buildCommand from './commands/build.js'
+
+const cli = await createCLI()
+
+cli.command(greetCommand)
+cli.command(buildCommand)
+
+await cli.run()
+```
+
+**Source:** `examples/hello-world/cli.ts`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Working with Options" icon="sliders" href="/guides/working-with-options">
+    Learn about option types, validation, and transformations
+  </Card>
+  
+  <Card title="Command Groups" icon="folder-tree" href="/guides/command-groups">
+    Organize commands into nested hierarchies
+  </Card>
+  
+  <Card title="Type Generation" icon="code" href="/guides/type-generation">
+    Automatic TypeScript type generation for your commands
+  </Card>
+  
+  <Card title="Global Flags" icon="flag" href="/guides/global-flags">
+    Add flags available to all commands
+  </Card>
+</CardGroup>

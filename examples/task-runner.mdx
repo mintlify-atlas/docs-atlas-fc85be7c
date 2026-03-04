@@ -1,0 +1,487 @@
+---
+title: 'Task Runner'
+description: 'Task automation CLI with advanced validation and interactive prompts'
+---
+
+## Overview
+
+The Task Runner example demonstrates building a real-world task automation CLI with complex validation patterns, multi-step wizards, and interactive workflows. Perfect for learning advanced Bunli features.
+
+**Location:** `examples/task-runner/`
+
+## Quick Start
+
+```bash
+cd examples/task-runner
+bun install
+
+# Run commands
+bun cli.ts build --env production --memory 2g
+bun cli.ts test --coverage 90 --watch
+bun cli.ts deploy --environment staging
+bun cli.ts setup --preset standard
+```
+
+## Project Structure
+
+```
+task-runner/
+├── cli.ts              # CLI entry point
+├── commands/
+│   ├── build.ts        # Validation + transformation
+│   ├── test.ts         # Complex validation patterns
+│   ├── deploy.ts       # Interactive deployment
+│   └── setup.ts        # Multi-step wizard
+├── bunli.config.ts     # Configuration
+├── package.json        # Dependencies
+└── README.md          # Documentation
+```
+
+## Commands
+
+### `build` - Project Building
+
+Demonstrates advanced validation and data transformation.
+
+**Source:** `commands/build.ts`
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+export default defineCommand({
+  name: 'build' as const,
+  description: 'Build project with validation and transformation',
+  options: {
+    // Environment validation
+    env: option(
+      z.enum(['development', 'staging', 'production'])
+        .default('development'),
+      { short: 'e', description: 'Build environment' }
+    ),
+    
+    // JSON parsing with error handling
+    config: option(
+      z.string()
+        .transform((val) => {
+          try {
+            return JSON.parse(val)
+          } catch {
+            throw new Error('Invalid JSON configuration')
+          }
+        })
+        .optional(),
+      { short: 'c', description: 'JSON configuration object' }
+    ),
+    
+    // Memory limit with size parsing
+    memory: option(
+      z.string()
+        .regex(/^\d+[kmg]?$/i, 'Memory must be a number with optional unit (k, m, g)')
+        .optional()
+        .transform((val) => {
+          const raw = val ?? '512m'
+          const num = parseInt(raw)
+          const unit = raw.slice(-1).toLowerCase()
+          const multipliers = { k: 1024, m: 1024 * 1024, g: 1024 * 1024 * 1024 }
+          return num * (multipliers[unit as keyof typeof multipliers] || 1)
+        }),
+      { short: 'm', description: 'Memory limit (e.g., 512m, 2g)' }
+    ),
+    
+    // Variables with key=value parsing
+    variables: option(
+      z.string()
+        .transform((val) => {
+          const vars: Record<string, string> = {}
+          val.split(',').forEach(pair => {
+            const [key, value] = pair.split('=')
+            if (key && value) {
+              vars[key.trim()] = value.trim()
+            }
+          })
+          return vars
+        })
+        .optional(),
+      { short: 'v', description: 'Environment variables (key1=value1,key2=value2)' }
+    ),
+    
+    watch: option(
+      z.coerce.boolean().default(false),
+      { short: 'w', description: 'Watch for changes' }
+    )
+  },
+  
+  handler: async ({ flags, colors, spinner }) => {
+    const spin = spinner('Building project...')
+    
+    spin.update('Validating configuration...')
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    spin.update('Compiling assets...')
+    await new Promise(resolve => setTimeout(resolve, 800))
+    
+    spin.succeed('Build completed successfully!')
+    
+    console.log(colors.bold('\nBuild Summary:'))
+    console.log(`  Environment: ${colors.cyan(flags.env)}`)
+    console.log(`  Memory: ${colors.cyan(flags.memory.toString())} bytes`)
+    
+    if (flags.config) {
+      console.log(`  Config: ${colors.cyan(JSON.stringify(flags.config))}`)
+    }
+    
+    if (flags.variables) {
+      console.log(`  Variables: ${colors.cyan(Object.keys(flags.variables).length)} set`)
+    }
+  }
+})
+```
+
+**Usage:**
+
+```bash
+# Basic build
+bun cli.ts build
+
+# Production build with config
+bun cli.ts build -e production -c '{"minify":true}' -m 2g
+
+# With environment variables
+bun cli.ts build -v "NODE_ENV=production,API_URL=https://api.example.com"
+
+# Watch mode
+bun cli.ts build --watch
+```
+
+### `test` - Test Execution
+
+Shows complex validation patterns and conditional logic.
+
+**Source:** `commands/test.ts`
+
+```typescript
+export default defineCommand({
+  name: 'test' as const,
+  description: 'Run tests with complex validation patterns',
+  options: {
+    pattern: option(
+      z.string()
+        .min(1, 'Pattern cannot be empty')
+        .default('**/*.test.ts'),
+      { short: 'p', description: 'Test file pattern' }
+    ),
+    
+    // Coverage threshold with range validation
+    coverage: option(
+      z.coerce.number()
+        .min(0, 'Coverage must be at least 0%')
+        .max(100, 'Coverage cannot exceed 100%')
+        .default(80),
+      { short: 'c', description: 'Minimum coverage percentage' }
+    ),
+    
+    // Timeout with custom validation
+    timeout: option(
+      z.coerce.number()
+        .int('Timeout must be a whole number')
+        .min(1000, 'Timeout must be at least 1000ms')
+        .max(300000, 'Timeout cannot exceed 5 minutes')
+        .default(30000),
+      { short: 't', description: 'Test timeout in milliseconds' }
+    ),
+    
+    // Environment variables with validation
+    env: option(
+      z.string()
+        .refine((val) => {
+          const vars = val.split(',')
+          return vars.every(v => v.includes('=') && v.split('=').length === 2)
+        }, 'Environment variables must be in format KEY=VALUE,KEY2=VALUE2')
+        .transform((val) => {
+          const vars: Record<string, string> = {}
+          val.split(',').forEach(pair => {
+            const [key, value] = pair.split('=')
+            if (key && value) vars[key.trim()] = value.trim()
+          })
+          return vars
+        })
+        .optional(),
+      { short: 'e', description: 'Environment variables (KEY=VALUE,KEY2=VALUE2)' }
+    ),
+    
+    retries: option(
+      z.coerce.number()
+        .int('Retries must be a whole number')
+        .min(0, 'Retries cannot be negative')
+        .max(5, 'Maximum 5 retries allowed')
+        .default(0),
+      { short: 'r', description: 'Number of retries for failed tests' }
+    ),
+    
+    watch: option(
+      z.coerce.boolean().default(false),
+      { short: 'w', description: 'Watch for changes' }
+    ),
+    
+    verbose: option(
+      z.coerce.boolean().default(false),
+      { short: 'v', description: 'Verbose output' }
+    )
+  },
+  
+  handler: async ({ flags, colors, spinner }) => {
+    const spin = spinner('Running tests...')
+    
+    // Simulate test execution
+    spin.update('Discovering test files...')
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    const testFiles = ['src/utils.test.ts', 'src/api.test.ts']
+    spin.update(`Found ${testFiles.length} test files`)
+    
+    let passed = 0
+    let failed = 0
+    
+    for (const file of testFiles) {
+      spin.update(`Running ${file}...`)
+      await new Promise(resolve => setTimeout(resolve, 800))
+      
+      if (file.includes('api')) {
+        failed++
+        if (flags.verbose) {
+          console.log(colors.red(`  FAIL ${file}`))
+        }
+      } else {
+        passed++
+        if (flags.verbose) {
+          console.log(colors.green(`  PASS ${file}`))
+        }
+      }
+    }
+    
+    spin.succeed('Tests completed')
+    
+    console.log(colors.bold('\nTest Results:'))
+    console.log(`  Passed: ${colors.green(String(passed))}`)
+    console.log(`  Failed: ${colors.red(String(failed))}`)
+    console.log(`  Coverage: ${colors.cyan('85.5%')}`)
+    console.log(`  Timeout: ${colors.cyan(flags.timeout + 'ms')}`)
+  }
+})
+```
+
+**Usage:**
+
+```bash
+# Run tests with coverage
+bun cli.ts test --coverage 85 --pattern "**/*.spec.ts"
+
+# With environment variables
+bun cli.ts test -e "NODE_ENV=test,DB_URL=memory" --retries 2
+
+# Watch mode with verbose
+bun cli.ts test --watch --verbose
+```
+
+### `deploy` - Deployment Workflow
+
+Interactive deployment with progress tracking and spinner variants.
+
+**Usage:**
+
+```bash
+# Interactive deployment
+bun cli.ts deploy
+
+# Skip specific steps
+bun cli.ts deploy -e production --skip tests,cache
+
+# Force deployment
+bun cli.ts deploy --force
+
+# Choose spinner style
+bun cli.ts deploy --spinner braille
+bun cli.ts deploy --spinner dots
+bun cli.ts deploy --spinner line
+```
+
+### `setup` - Project Setup Wizard
+
+Comprehensive setup wizard with presets and multi-step flows.
+
+**Usage:**
+
+```bash
+# Interactive setup
+bun cli.ts setup
+
+# Use presets
+bun cli.ts setup --preset minimal
+bun cli.ts setup --preset standard
+bun cli.ts setup --preset full
+```
+
+## Configuration
+
+**Source:** `bunli.config.ts`
+
+```typescript
+import { defineConfig } from '@bunli/core'
+import { completionsPlugin } from '@bunli/plugin-completions'
+
+export default defineConfig({
+  name: 'task-runner',
+  version: '1.0.0',
+  description: 'Task automation CLI with validation and interactivity',
+  plugins: [completionsPlugin],
+  commands: {
+    entry: './cli.ts',
+    directory: './commands'
+  },
+  build: {
+    entry: './cli.ts',
+    outdir: './dist',
+    targets: ['native'],
+    compress: false,
+    minify: false,
+    sourcemap: true
+  }
+})
+```
+
+## CLI Entry Point
+
+**Source:** `cli.ts`
+
+```typescript
+#!/usr/bin/env bun
+import { createCLI } from '@bunli/core'
+import buildCommand from './commands/build.js'
+import deployCommand from './commands/deploy.js'
+import setupCommand from './commands/setup.js'
+import testCommand from './commands/test.js'
+
+const cli = await createCLI()
+
+cli.command(buildCommand)
+cli.command(testCommand)
+cli.command(deployCommand)
+cli.command(setupCommand)
+
+await cli.run()
+```
+
+## Key Patterns
+
+### 1. Schema Validation with Transform
+
+Transform CLI string inputs into structured data:
+
+```typescript
+variables: option(
+  z.string()
+    .transform((val) => {
+      const vars: Record<string, string> = {}
+      val.split(',').forEach(pair => {
+        const [key, value] = pair.split('=')
+        if (key && value) vars[key.trim()] = value.trim()
+      })
+      return vars
+    })
+    .optional()
+)
+```
+
+### 2. Custom Validation with Refine
+
+Add custom validation logic:
+
+```typescript
+env: option(
+  z.string()
+    .refine((val) => {
+      const vars = val.split(',')
+      return vars.every(v => v.includes('='))
+    }, 'Must be in format KEY=VALUE,KEY2=VALUE2')
+)
+```
+
+### 3. Memory Size Parsing
+
+Parse human-readable sizes:
+
+```typescript
+memory: option(
+  z.string()
+    .regex(/^\d+[kmg]?$/i)
+    .transform((val) => {
+      const num = parseInt(val)
+      const unit = val.slice(-1).toLowerCase()
+      const multipliers = { k: 1024, m: 1024*1024, g: 1024*1024*1024 }
+      return num * (multipliers[unit] || 1)
+    })
+)
+```
+
+### 4. Range Validation
+
+Enforce numeric ranges:
+
+```typescript
+coverage: option(
+  z.coerce.number()
+    .min(0, 'Coverage must be at least 0%')
+    .max(100, 'Coverage cannot exceed 100%')
+    .default(80)
+)
+```
+
+### 5. Interactive Prompts
+
+Build multi-step wizards:
+
+```typescript
+handler: async ({ prompt }) => {
+  prompt.intro('Project Setup Wizard')
+  
+  const name = await prompt.text('Project name:', {
+    validate: (val) => val.length >= 2 || 'Name too short'
+  })
+  
+  const features = await prompt.multiselect('Features:', {
+    options: [
+      { value: 'testing', label: 'Testing', hint: 'Jest setup' },
+      { value: 'linting', label: 'Linting', hint: 'ESLint config' }
+    ]
+  })
+  
+  prompt.outro('Setup complete!')
+}
+```
+
+## What You Learned
+
+- ✅ Complex validation patterns
+- ✅ Schema transformation with Zod
+- ✅ Custom validation with `refine()`
+- ✅ Data parsing (JSON, key=value, sizes)
+- ✅ Range validation
+- ✅ Multi-step interactive wizards
+- ✅ Progress indicators
+- ✅ Spinner variants
+- ✅ Plugin integration (completions)
+
+## Next Steps
+
+Explore more patterns:
+
+- **[Git Tool](/examples/git-tool)** - External tool integration
+- **[Dev Server](/examples/dev-server)** - Plugin system and long-running processes
+- **[Hello World](/examples/hello-world)** - Basic command structure
+
+## Source Code
+
+View the complete source code on GitHub:
+
+[examples/task-runner](https://github.com/bunlijs/bunli/tree/main/examples/task-runner)

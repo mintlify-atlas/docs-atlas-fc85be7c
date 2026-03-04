@@ -1,0 +1,370 @@
+---
+title: Development Mode
+description: Run your Bunli CLI in development mode with hot reload and automatic type generation
+---
+
+The `bunli dev` command runs your CLI in development mode with hot reload, automatic type generation, and debugging support. It provides a fast feedback loop during development.
+
+## Usage
+
+```bash
+bunli dev [options] [...args]
+```
+
+### Basic Example
+
+```bash
+# Start dev mode with default settings
+bunli dev
+
+# Pass arguments to your CLI
+bunli dev my-command --flag value
+
+# Use custom entry file
+bunli dev --entry src/my-cli.ts
+```
+
+## Options
+
+| Option | Alias | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--entry` | `-e` | `string` | auto-detect | Entry file (defaults to auto-detect) |
+| `--generate` | - | `boolean` | `true` | Enable codegen |
+| `--clear-screen` | - | `boolean` | `true` | Clear screen on reload |
+| `--watch` | `-w` | `boolean` | `true` | Watch for changes |
+| `--inspect` | `-i` | `boolean` | `false` | Enable debugger |
+| `--port` | `-p` | `number` | - | Debugger port |
+
+## Hot Reload
+
+The dev command uses Bun's native hot reload feature (`--hot`) to automatically restart your CLI when source files change:
+
+```typescript
+// From packages/cli/src/commands/dev.ts:173-176
+// Use --hot for hot reload (Bun's native hot reload)
+if (typedFlags.watch ?? config.dev?.watch ?? true) {
+  bunArgs.push('--hot')
+}
+```
+
+### Watch Patterns
+
+The dev command automatically determines which directory to watch for changes:
+
+```typescript
+// From packages/cli/src/commands/dev.ts:31-58
+export function resolveWatchDirectory(entryPath: string, configuredDirectory?: string): string | null {
+  if (configuredDirectory) {
+    return path.resolve(configuredDirectory)
+  }
+
+  const cwd = process.cwd()
+  const defaultCommandsDir = path.resolve(cwd, 'commands')
+  if (isDirectory(defaultCommandsDir)) {
+    return defaultCommandsDir
+  }
+
+  const srcCommandsDir = path.resolve(cwd, 'src/commands')
+  if (isDirectory(srcCommandsDir)) {
+    return srcCommandsDir
+  }
+
+  const entryDirectory = path.dirname(entryPath)
+  if (entryDirectory !== cwd) {
+    return entryDirectory
+  }
+
+  const srcDir = path.resolve(cwd, 'src')
+  if (isDirectory(srcDir)) {
+    return srcDir
+  }
+
+  return null
+}
+```
+
+The watch directory is determined in the following priority order:
+
+1. Configured `commands.directory` in `bunli.config.ts`
+2. `./commands` directory if it exists
+3. `./src/commands` directory if it exists
+4. Directory containing the entry file
+5. `./src` directory if it exists
+
+## Automatic Type Generation
+
+When codegen is enabled (default), the dev command automatically generates TypeScript type definitions for your commands:
+
+```typescript
+// From packages/cli/src/commands/dev.ts:115-139
+const generateTypes = async (): Promise<Result<void, DevCommandErrorType>> => {
+  if (!typedFlags.generate) return Result.ok(undefined)
+
+  const configuredEntry = config.commands?.entry || config.build?.entry
+  const configuredEntryFile = Array.isArray(configuredEntry) ? configuredEntry[0] : configuredEntry
+  const discoveredEntry = await findEntry()
+  const resolvedEntry = typedFlags.entry || configuredEntryFile || discoveredEntry
+  if (!resolvedEntry) {
+    return failDev('No entry file found for code generation. Set commands.entry or pass --entry.')
+  }
+
+  const generator = new Generator({
+    entry: resolvedEntry,
+    directory: config.commands?.directory,
+    outputFile: './.bunli/commands.gen.ts',
+    config,
+    generateReport: config.commands?.generateReport
+  })
+
+  const generationResult = await generator.run()
+  if (Result.isError(generationResult)) {
+    return failDev(`Failed to generate types: ${generationResult.error.message}`, generationResult.error)
+  }
+  return Result.ok(undefined)
+}
+```
+
+### File Watcher for Type Regeneration
+
+The dev command watches your commands directory for changes and automatically regenerates types:
+
+```typescript
+// From packages/cli/src/commands/dev.ts:212-242
+const watchCommands = async () => {
+  try {
+    const watcher = watch(watchDirectory, {
+      recursive: true,
+      signal
+    })
+
+    for await (const event of watcher) {
+      // Only regenerate for TypeScript/JavaScript files
+      if (!event.filename?.match(/\.(ts|tsx|js|jsx)$/)) continue
+      
+      // Skip generated files
+      if (event.filename?.includes('commands.gen.ts')) continue
+      if (event.filename?.includes('.bunli/')) continue
+
+      console.log(colors.dim(`\n[${new Date().toLocaleTimeString()}] Command file changed: ${event.filename}`))
+      const spin = spinner('Regenerating types...')
+      const generationResult = await generateTypes()
+      if (generationResult.isErr()) {
+        spin.fail('Failed to regenerate types')
+        console.error(colors.red(generationResult.error.message))
+      } else {
+        spin.succeed('Types regenerated')
+      }
+    }
+  } catch (err) {
+    if (!signal.aborted) {
+      throw err
+    }
+  }
+}
+```
+
+Only `.ts`, `.tsx`, `.js`, and `.jsx` files trigger regeneration. Generated files (`.bunli/commands.gen.ts`) are automatically excluded.
+
+## Debugging
+
+Enable Node.js debugger with the `--inspect` flag:
+
+```bash
+# Enable debugger on default port
+bunli dev --inspect
+
+# Specify custom debugger port
+bunli dev --inspect --port 9229
+```
+
+This adds the `--inspect` flag to the Bun process:
+
+```typescript
+// From packages/cli/src/commands/dev.ts:179-187
+// Add inspect flag if enabled
+if (typedFlags.inspect) {
+  bunArgs.push('--inspect')
+  if (typedFlags.port) {
+    bunArgs.push(`--inspect-port=${typedFlags.port}`)
+  }
+} else if (typedFlags.port) {
+  // If port is specified without inspect, still add it
+  bunArgs.push(`--inspect-port=${typedFlags.port}`)
+}
+```
+
+## Configuration
+
+Configure dev mode in `bunli.config.ts`:
+
+```typescript
+import { defineConfig } from 'bunli'
+
+export default defineConfig({
+  commands: {
+    entry: './src/cli.ts',
+    directory: './src/commands',
+    generateReport: false
+  },
+  dev: {
+    watch: true
+  }
+})
+```
+
+## Output Example
+
+```bash
+$ bunli dev
+
+⠋ Generating command types...
+✅ Types generated
+
+👀 Starting dev mode...
+
+Running: bun --hot /path/to/src/cli.ts
+
+Watching command changes in /path/to/src/commands
+
+# Your CLI output appears here
+```
+
+When a file changes:
+
+```bash
+[10:30:45 AM] Command file changed: my-command.ts
+⠋ Regenerating types...
+✅ Types regenerated
+```
+
+## Disabling Features
+
+### Disable Type Generation
+
+```bash
+bunli dev --generate=false
+```
+
+### Disable Watch Mode
+
+```bash
+bunli dev --watch=false
+```
+
+### Disable Screen Clearing
+
+```bash
+bunli dev --clear-screen=false
+```
+
+## Advanced Usage
+
+### Custom Entry Point
+
+```bash
+bunli dev --entry ./src/alternative-cli.ts
+```
+
+### Passing Arguments to CLI
+
+All positional arguments after the dev command options are passed to your CLI:
+
+```bash
+# Runs: my-cli command --flag value
+bunli dev command --flag value
+```
+
+```typescript
+// From packages/cli/src/commands/dev.ts:192-195
+// Add any positional arguments (passed through to the CLI)
+if (positional.length > 0) {
+  bunArgs.push(...positional)
+}
+```
+
+## Environment Variables
+
+The dev command sets the `NODE_ENV` environment variable to `development`:
+
+```typescript
+// From packages/cli/src/commands/dev.ts:256-262
+const proc = Bun.spawn(['bun', ...bunArgs], {
+  stdio: ['inherit', 'inherit', 'inherit'],
+  env: {
+    ...process.env,
+    NODE_ENV: 'development'
+  }
+})
+```
+
+## Signal Handling
+
+The dev command properly handles `SIGINT` (Ctrl+C) and `SIGTERM` signals:
+
+```typescript
+// From packages/cli/src/commands/dev.ts:266-283
+let terminatedBySignal = false
+let forceKillTimer: ReturnType<typeof setTimeout> | undefined
+const handleExit = () => {
+  if (terminatedBySignal) return
+  terminatedBySignal = true
+  console.log(colors.dim('\n\nStopping dev server...'))
+  // Abort file watcher if it exists
+  if (ac) {
+    ac.abort()
+  }
+  // Kill the spawned process
+  proc.kill()
+  forceKillTimer = setTimeout(() => {
+    try {
+      proc.kill('SIGKILL')
+    } catch {
+      // Process already exited
+    }
+  }, 3000)
+}
+```
+
+Press Ctrl+C to gracefully stop the dev server.
+
+## Troubleshooting
+
+### No Entry File Found
+
+If you see "No entry file found", specify the entry file explicitly:
+
+```bash
+bunli dev --entry src/cli.ts
+```
+
+Or configure it in `bunli.config.ts`:
+
+```typescript
+export default defineConfig({
+  commands: {
+    entry: './src/cli.ts'
+  }
+})
+```
+
+### Type Generation Failures
+
+If type generation fails, check:
+
+1. Your entry file exports a CLI created with `createCLI()`
+2. All commands are properly imported and registered
+3. Commands are defined using `defineCommand()`
+
+### File Watcher Not Working
+
+If the file watcher doesn't detect changes:
+
+1. Ensure the commands directory exists
+2. Set `commands.directory` explicitly in `bunli.config.ts`
+3. Check file system permissions
+
+## See Also
+
+- [Building](/toolchain/building) - Build your CLI for production
+- [Testing](/toolchain/testing) - Run tests during development
+- [Type Generation](/toolchain/generate) - Manual type generation command

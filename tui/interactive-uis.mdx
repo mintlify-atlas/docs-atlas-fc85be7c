@@ -1,0 +1,771 @@
+---
+title: Interactive UIs
+description: Build full-featured interactive terminal interfaces with keyboard handling and state management
+---
+
+# Interactive UIs
+
+Learn how to build complete interactive terminal applications with keyboard navigation, state management, and complex workflows.
+
+## Keyboard Input Handling
+
+### Basic Keyboard Events
+
+```typescript
+import { useKeyboard, useRenderer } from '@bunli/tui'
+
+function InteractiveApp() {
+  const renderer = useRenderer()
+
+  useKeyboard((key) => {
+    if (key.name === 'q' || key.name === 'escape') {
+      renderer.destroy()
+    }
+
+    if (key.ctrl && key.name === 'c') {
+      console.log('Ctrl+C pressed')
+      renderer.destroy()
+    }
+
+    if (key.name === 'space') {
+      console.log('Space pressed')
+    }
+  })
+
+  return (
+    <box>
+      <text>Press Q or Esc to quit</text>
+    </box>
+  )
+}
+```
+
+### Key Event Properties
+
+```typescript
+interface KeyEvent {
+  name?: string           // 'a', 'enter', 'escape', 'up', etc.
+  sequence?: string       // Raw key sequence
+  ctrl?: boolean          // Ctrl modifier
+  shift?: boolean         // Shift modifier
+  meta?: boolean          // Meta/Alt modifier
+}
+```
+
+### Navigation Keys
+
+```typescript
+import { useState } from 'react'
+import { useKeyboard } from '@bunli/tui'
+
+function NavigableList() {
+  const items = ['Item 1', 'Item 2', 'Item 3', 'Item 4']
+  const [selectedIndex, setSelectedIndex] = useState(0)
+
+  useKeyboard((key) => {
+    if (key.name === 'up' || key.name === 'k') {
+      setSelectedIndex((i) => Math.max(0, i - 1))
+    }
+
+    if (key.name === 'down' || key.name === 'j') {
+      setSelectedIndex((i) => Math.min(items.length - 1, i + 1))
+    }
+
+    if (key.name === 'enter') {
+      console.log('Selected:', items[selectedIndex])
+    }
+  })
+
+  return (
+    <box style={{ flexDirection: 'column' }}>
+      {items.map((item, index) => (
+        <text
+          key={item}
+          content={`${index === selectedIndex ? '> ' : '  '}${item}`}
+          fg={index === selectedIndex ? '#00ff00' : '#ffffff'}
+        />
+      ))}
+    </box>
+  )
+}
+```
+
+### Keyboard Shortcuts with KeyMatcher
+
+```typescript
+import { createKeyMatcher } from '@bunli/tui'
+import { useKeyboard } from '@bunli/tui'
+
+const keymap = createKeyMatcher({
+  save: ['ctrl+s', 'meta+s'],
+  quit: ['ctrl+q', 'escape'],
+  help: ['?', 'h'],
+  next: ['tab', 'right', 'l'],
+  previous: ['shift+tab', 'left', 'h']
+})
+
+function EditorApp() {
+  useKeyboard((key) => {
+    if (keymap.match('save', key)) {
+      console.log('Save!')
+      return true // Handled
+    }
+
+    if (keymap.match('quit', key)) {
+      console.log('Quit!')
+      return true
+    }
+
+    if (keymap.match('help', key)) {
+      console.log('Show help')
+      return true
+    }
+
+    return false // Not handled
+  })
+
+  return <box>{/* ... */}</box>
+}
+```
+
+### Scoped Keyboard Handling
+
+Use `useScopedKeyboard` for nested components with priority:
+
+```typescript
+import { useScopedKeyboard } from '@bunli/runtime'
+
+function Modal({ onClose }) {
+  // Higher priority (10) - handles keys first
+  useScopedKeyboard(
+    'modal',
+    (key) => {
+      if (key.name === 'escape') {
+        onClose()
+        return true // Stop propagation
+      }
+      return false
+    },
+    { active: true, priority: 10 }
+  )
+
+  return <box>{/* modal content */}</box>
+}
+
+function App() {
+  // Lower priority (0) - receives unhandled keys
+  useScopedKeyboard(
+    'app',
+    (key) => {
+      if (key.name === 'q') {
+        console.log('Quit app')
+        return true
+      }
+      return false
+    },
+    { active: true, priority: 0 }
+  )
+
+  return <box>{/* ... */}</box>
+}
+```
+
+## State Management
+
+### Local Component State
+
+```typescript
+import { useState, useEffect } from 'react'
+import { useKeyboard, useRenderer } from '@bunli/tui'
+
+function CounterApp() {
+  const [count, setCount] = useState(0)
+  const [running, setRunning] = useState(false)
+  const renderer = useRenderer()
+
+  useEffect(() => {
+    if (!running) return
+
+    const timer = setInterval(() => {
+      setCount((c) => c + 1)
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [running])
+
+  useKeyboard((key) => {
+    if (key.name === 'space') {
+      setRunning((r) => !r)
+    }
+    if (key.name === 'r') {
+      setCount(0)
+    }
+    if (key.name === 'q') {
+      renderer.destroy()
+    }
+  })
+
+  return (
+    <box border padding={2} style={{ flexDirection: 'column' }}>
+      <text>Count: {count}</text>
+      <text>Status: {running ? 'Running' : 'Paused'}</text>
+      <text>Space: toggle | R: reset | Q: quit</text>
+    </box>
+  )
+}
+```
+
+### Shared State with Context
+
+```typescript
+import { createContext, useContext, useState } from 'react'
+
+const AppStateContext = createContext(null)
+
+function AppStateProvider({ children }) {
+  const [selectedTab, setSelectedTab] = useState('home')
+  const [notifications, setNotifications] = useState([])
+
+  const addNotification = (message) => {
+    setNotifications((prev) => [...prev, { id: Date.now(), message }])
+  }
+
+  const value = {
+    selectedTab,
+    setSelectedTab,
+    notifications,
+    addNotification
+  }
+
+  return (
+    <AppStateContext.Provider value={value}>
+      {children}
+    </AppStateContext.Provider>
+  )
+}
+
+function useAppState() {
+  return useContext(AppStateContext)
+}
+
+function TabView() {
+  const { selectedTab, setSelectedTab } = useAppState()
+
+  return (
+    <Tabs
+      tabs={[{ id: 'home' }, { id: 'settings' }]}
+      activeTab={selectedTab}
+      onTabChange={setSelectedTab}
+    >
+      {/* content */}
+    </Tabs>
+  )
+}
+```
+
+### Async State
+
+```typescript
+import { useState, useEffect } from 'react'
+import { ProgressBar } from '@bunli/tui'
+
+function DataLoader() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    async function load() {
+      try {
+        setLoading(true)
+        setProgress(0)
+
+        const result = await fetchDataWithProgress({
+          signal: controller.signal,
+          onProgress: (p) => setProgress(p)
+        })
+
+        setData(result)
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setError(err.message)
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    load()
+
+    return () => controller.abort()
+  }, [])
+
+  if (loading) {
+    return (
+      <box style={{ flexDirection: 'column' }}>
+        <text>Loading data...</text>
+        <ProgressBar value={progress} />
+      </box>
+    )
+  }
+
+  if (error) {
+    return <Alert tone="danger" message={error} />
+  }
+
+  return <box>{/* Render data */}</box>
+}
+```
+
+## Dialog Manager
+
+Use the built-in dialog system for confirm/choose flows:
+
+```typescript
+import { useDialogManager, DialogDismissedError } from '@bunli/runtime'
+import { useRenderer } from '@bunli/tui'
+
+function ActionsScreen() {
+  const dialogs = useDialogManager()
+  const renderer = useRenderer()
+
+  const handleDeploy = async () => {
+    try {
+      // Confirm action
+      const confirmed = await dialogs.confirm({
+        title: 'Deploy to Production',
+        message: 'This will deploy the current build. Continue?'
+      })
+
+      if (!confirmed) {
+        return
+      }
+
+      // Choose target
+      const region = await dialogs.choose({
+        title: 'Select Region',
+        options: [
+          { label: 'US East', value: 'us-east', section: 'Americas' },
+          { label: 'US West', value: 'us-west', section: 'Americas' },
+          { label: 'EU Central', value: 'eu-central', section: 'Europe' },
+          { label: 'Asia Pacific', value: 'ap-south', disabled: true }
+        ]
+      })
+
+      console.log('Deploying to:', region)
+
+      // Deploy...
+      await deploy(region)
+
+      // Success confirmation
+      await dialogs.confirm({
+        title: 'Success',
+        message: 'Deployment completed successfully',
+        confirmLabel: 'OK',
+        showCancel: false
+      })
+
+      renderer.destroy()
+    } catch (error) {
+      if (error instanceof DialogDismissedError) {
+        console.log('Dialog dismissed')
+        return
+      }
+      throw error
+    }
+  }
+
+  return (
+    <box>
+      <button onClick={handleDeploy}>Deploy</button>
+    </box>
+  )
+}
+```
+
+## Animation
+
+### Timeline System
+
+```typescript
+import { useState, useEffect } from 'react'
+import { useTimeline } from '@bunli/tui'
+
+function AnimatedProgress() {
+  const [progress, setProgress] = useState(0)
+  const timeline = useTimeline({ duration: 2000 })
+
+  useEffect(() => {
+    const animation = timeline.add(
+      { value: 0 },
+      {
+        value: 100,
+        duration: 2000,
+        easing: 'easeInOutQuad',
+        onUpdate: (anim) => {
+          setProgress(Math.round(anim.targets[0].value))
+        },
+        onComplete: () => {
+          console.log('Animation complete')
+        }
+      }
+    )
+
+    timeline.play()
+
+    return () => {
+      timeline.pause()
+    }
+  }, [])
+
+  return <ProgressBar value={progress} label="Loading" />
+}
+```
+
+### Staggered Animations
+
+```typescript
+function StaggeredList() {
+  const items = ['Item 1', 'Item 2', 'Item 3']
+  const [opacity, setOpacity] = useState(items.map(() => 0))
+  const timeline = useTimeline()
+
+  useEffect(() => {
+    items.forEach((_, index) => {
+      timeline.add(
+        { opacity: 0 },
+        {
+          opacity: 1,
+          duration: 500,
+          delay: index * 100,
+          onUpdate: (anim) => {
+            setOpacity((prev) => {
+              const next = [...prev]
+              next[index] = anim.targets[0].opacity
+              return next
+            })
+          }
+        }
+      )
+    })
+
+    timeline.play()
+  }, [])
+
+  return (
+    <box style={{ flexDirection: 'column' }}>
+      {items.map((item, i) => (
+        <text
+          key={item}
+          content={item}
+          style={{ opacity: opacity[i] }}
+        />
+      ))}
+    </box>
+  )
+}
+```
+
+## Complete Examples
+
+### Dashboard Application
+
+```typescript
+import { useState, useEffect } from 'react'
+import { useKeyboard, useRenderer } from '@bunli/tui'
+import { Panel, KeyValueList, Sparkline, ProgressBar } from '@bunli/tui'
+
+function Dashboard() {
+  const [metrics, setMetrics] = useState({
+    cpu: [45, 52, 48, 60, 55, 58],
+    memory: 2.3,
+    requests: 1234
+  })
+  const renderer = useRenderer()
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setMetrics((prev) => ({
+        cpu: [...prev.cpu.slice(1), Math.random() * 100],
+        memory: Math.random() * 4,
+        requests: prev.requests + Math.floor(Math.random() * 10)
+      }))
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [])
+
+  useKeyboard((key) => {
+    if (key.name === 'q') {
+      renderer.destroy()
+    }
+  })
+
+  const currentCpu = metrics.cpu[metrics.cpu.length - 1]
+
+  return (
+    <box style={{ flexDirection: 'column', gap: 2 }}>
+      <Panel title="System Metrics" footer="Press Q to quit">
+        <box style={{ flexDirection: 'column', gap: 1 }}>
+          <box style={{ flexDirection: 'row', gap: 2 }}>
+            <text>CPU:</text>
+            <Sparkline values={metrics.cpu} width={20} color="#00ff00" />
+            <text>{Math.round(currentCpu)}%</text>
+          </box>
+
+          <ProgressBar
+            value={currentCpu}
+            label="CPU Usage"
+            color={currentCpu > 80 ? '#ff0000' : '#00ff00'}
+          />
+
+          <KeyValueList
+            items={[
+              { key: 'Memory', value: `${metrics.memory.toFixed(2)} GB` },
+              { key: 'Requests', value: metrics.requests.toLocaleString() }
+            ]}
+          />
+        </box>
+      </Panel>
+    </box>
+  )
+}
+
+export const dashboard = defineCommand({
+  name: 'dashboard',
+  description: 'System metrics dashboard',
+  render: () => <Dashboard />,
+  tui: {
+    renderer: {
+      bufferMode: 'alternate'
+    }
+  }
+})
+```
+
+### Multi-Step Wizard
+
+```typescript
+import { useState } from 'react'
+import { Form, FormField, SelectField, ProgressBar } from '@bunli/tui'
+import { useRenderer } from '@bunli/tui'
+import { z } from 'zod'
+
+const steps = [
+  {
+    title: 'Basic Info',
+    schema: z.object({
+      name: z.string().min(1),
+      type: z.enum(['web', 'api', 'cli'])
+    }),
+    fields: [
+      { kind: 'text', name: 'name', label: 'Project Name' },
+      {
+        kind: 'select',
+        name: 'type',
+        label: 'Type',
+        options: [
+          { label: 'Web App', value: 'web' },
+          { label: 'API', value: 'api' },
+          { label: 'CLI Tool', value: 'cli' }
+        ]
+      }
+    ]
+  },
+  {
+    title: 'Configuration',
+    schema: z.object({
+      typescript: z.boolean(),
+      testing: z.boolean()
+    }),
+    fields: [
+      { kind: 'checkbox', name: 'typescript', label: 'TypeScript' },
+      { kind: 'checkbox', name: 'testing', label: 'Testing' }
+    ]
+  }
+]
+
+function SetupWizard() {
+  const [step, setStep] = useState(0)
+  const [data, setData] = useState({})
+  const renderer = useRenderer()
+
+  const currentStep = steps[step]
+  const progress = ((step + 1) / steps.length) * 100
+
+  const handleSubmit = (values) => {
+    const nextData = { ...data, ...values }
+    setData(nextData)
+
+    if (step < steps.length - 1) {
+      setStep(step + 1)
+    } else {
+      console.log('Wizard complete:', nextData)
+      renderer.destroy()
+    }
+  }
+
+  const handleCancel = () => {
+    if (step > 0) {
+      setStep(step - 1)
+    } else {
+      renderer.destroy()
+    }
+  }
+
+  return (
+    <box style={{ flexDirection: 'column', gap: 2 }}>
+      <text>Step {step + 1} of {steps.length}</text>
+      <ProgressBar value={progress} />
+
+      <SchemaForm
+        title={currentStep.title}
+        schema={currentStep.schema}
+        fields={currentStep.fields}
+        onSubmit={handleSubmit}
+        onCancel={handleCancel}
+        submitHint={step === steps.length - 1 ? 'Finish' : 'Next'}
+      />
+    </box>
+  )
+}
+```
+
+### File Browser
+
+```typescript
+import { useState, useEffect } from 'react'
+import { useKeyboard, useRenderer } from '@bunli/tui'
+import { readdir } from 'fs/promises'
+import { join } from 'path'
+
+function FileBrowser({ initialPath = '.' }) {
+  const [path, setPath] = useState(initialPath)
+  const [files, setFiles] = useState([])
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const renderer = useRenderer()
+
+  useEffect(() => {
+    readdir(path, { withFileTypes: true }).then((entries) => {
+      setFiles([
+        { name: '..', isDirectory: true },
+        ...entries.map((e) => ({
+          name: e.name,
+          isDirectory: e.isDirectory()
+        }))
+      ])
+      setSelectedIndex(0)
+    })
+  }, [path])
+
+  useKeyboard((key) => {
+    if (key.name === 'up' || key.name === 'k') {
+      setSelectedIndex((i) => Math.max(0, i - 1))
+    }
+    if (key.name === 'down' || key.name === 'j') {
+      setSelectedIndex((i) => Math.min(files.length - 1, i + 1))
+    }
+    if (key.name === 'enter') {
+      const selected = files[selectedIndex]
+      if (selected?.isDirectory) {
+        if (selected.name === '..') {
+          setPath(join(path, '..'))
+        } else {
+          setPath(join(path, selected.name))
+        }
+      }
+    }
+    if (key.name === 'q') {
+      renderer.destroy()
+    }
+  })
+
+  return (
+    <box border padding={2} style={{ flexDirection: 'column' }}>
+      <text>Path: {path}</text>
+      <Divider />
+      <box style={{ flexDirection: 'column' }}>
+        {files.map((file, index) => (
+          <text
+            key={file.name}
+            content={`${index === selectedIndex ? '> ' : '  '}${file.isDirectory ? '📁 ' : '📄 '}${file.name}`}
+            fg={index === selectedIndex ? '#00ff00' : '#ffffff'}
+          />
+        ))}
+      </box>
+      <Divider />
+      <text>↑/↓: navigate | Enter: open | Q: quit</text>
+    </box>
+  )
+}
+```
+
+## Best Practices
+
+### 1. Always Handle Exit
+
+```typescript
+function MyApp() {
+  const renderer = useRenderer()
+
+  useKeyboard((key) => {
+    if (key.name === 'q' || key.name === 'escape') {
+      renderer.destroy() // Required!
+    }
+  })
+
+  return <box>{/* ... */}</box>
+}
+```
+
+### 2. Provide Visual Feedback
+
+```typescript
+// Show loading states
+{loading && <text>Loading...</text>}
+
+// Highlight selection
+<text fg={selected ? '#00ff00' : '#ffffff'}>
+
+// Show keyboard hints
+<text fg="#888">Press Q to quit</text>
+```
+
+### 3. Handle Cleanup
+
+```typescript
+useEffect(() => {
+  const timer = setInterval(() => {
+    // ...
+  }, 1000)
+
+  return () => clearInterval(timer) // Cleanup!
+}, [])
+```
+
+### 4. Graceful Degradation
+
+```typescript
+export const myCommand = defineCommand({
+  name: 'my-command',
+  render: () => <InteractiveUI />,
+  handler: async () => {
+    // Fallback for non-interactive terminals
+    console.log('Running in CLI mode')
+  }
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Components" icon="shapes" href="/tui/components">
+    Explore all available components
+  </Card>
+  <Card title="Prompts" icon="terminal" href="/tui/prompts">
+    Learn about prompt APIs
+  </Card>
+</CardGroup>

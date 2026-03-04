@@ -1,0 +1,484 @@
+---
+title: Config Merger Plugin
+description: Load and merge configuration from multiple sources
+---
+
+## Overview
+
+The `@bunli/plugin-config` plugin loads configuration from multiple JSON files and merges them into your CLI's configuration. This allows users to:
+
+- Store configuration in standard locations
+- Override defaults with user-specific settings
+- Use project-specific configuration files
+
+## Installation
+
+```bash
+bun add @bunli/plugin-config
+```
+
+## Usage
+
+```typescript
+import { createCLI } from '@bunli/core'
+import { configMergerPlugin } from '@bunli/plugin-config'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    configMergerPlugin()
+  ]
+})
+```
+
+## Default Config Sources
+
+By default, the plugin loads configuration from:
+
+1. `~/.config/{{name}}/config.json` - User-level config
+2. `.{{name}}rc` - Project root config
+3. `.{{name}}rc.json` - Project root config (explicit JSON)
+4. `.config/{{name}}.json` - Project .config directory
+
+The `{{name}}` placeholder is replaced with your CLI name.
+
+### Example
+
+For a CLI named `my-cli`, these locations are checked:
+
+```bash
+~/.config/my-cli/config.json
+.my-clirc
+.my-clirc.json
+.config/my-cli.json
+```
+
+## Configuration
+
+```typescript
+interface ConfigPluginOptions {
+  /**
+   * Config file sources to load
+   * Supports template variables: {{name}} for app name
+   * Default: ['~/.config/{{name}}/config.json', '.{{name}}rc', '.{{name}}rc.json']
+   */
+  sources?: string[]
+  
+  /**
+   * Merge strategy
+   * - 'deep': Recursively merge objects (default)
+   * - 'shallow': Only merge top-level properties
+   */
+  mergeStrategy?: 'shallow' | 'deep'
+  
+  /**
+   * Whether to stop on first found config
+   * Default: false (loads and merges all found configs)
+   */
+  stopOnFirst?: boolean
+}
+```
+
+## Custom Sources
+
+Specify custom configuration sources:
+
+```typescript
+import { configMergerPlugin } from '@bunli/plugin-config'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    configMergerPlugin({
+      sources: [
+        '~/.config/{{name}}/config.json',  // User config
+        '.{{name}}rc.json',                 // Project config
+        '/etc/{{name}}/config.json'         // System config
+      ]
+    })
+  ]
+})
+```
+
+## Merge Strategies
+
+### Deep Merge (Default)
+
+Recursively merges nested objects:
+
+```typescript
+configMergerPlugin({
+  mergeStrategy: 'deep'
+})
+```
+
+**Example:**
+
+```json
+// ~/.config/my-cli/config.json
+{
+  "build": {
+    "minify": true,
+    "sourcemap": true
+  }
+}
+
+// .my-clirc.json
+{
+  "build": {
+    "sourcemap": false
+  }
+}
+
+// Merged result:
+{
+  "build": {
+    "minify": true,      // From user config
+    "sourcemap": false   // Overridden by project config
+  }
+}
+```
+
+### Shallow Merge
+
+Only merges top-level properties:
+
+```typescript
+configMergerPlugin({
+  mergeStrategy: 'shallow'
+})
+```
+
+**Example:**
+
+```json
+// ~/.config/my-cli/config.json
+{
+  "build": {
+    "minify": true,
+    "sourcemap": true
+  }
+}
+
+// .my-clirc.json
+{
+  "build": {
+    "sourcemap": false
+  }
+}
+
+// Merged result:
+{
+  "build": {
+    "sourcemap": false   // Entire build object replaced
+  }
+}
+```
+
+## Load Order
+
+Configs are loaded in source order, with later configs taking precedence:
+
+```typescript
+configMergerPlugin({
+  sources: [
+    '~/.config/{{name}}/config.json',  // Loaded first (lowest priority)
+    '.{{name}}rc.json'                  // Loaded last (highest priority)
+  ]
+})
+```
+
+## Stop on First
+
+Load only the first found config:
+
+```typescript
+configMergerPlugin({
+  stopOnFirst: true,
+  sources: [
+    '.{{name}}rc.json',                 // Check first
+    '~/.config/{{name}}/config.json'    // Only if first not found
+  ]
+})
+```
+
+## Real-World Examples
+
+### User + Project Config
+
+```typescript
+import { createCLI } from '@bunli/core'
+import { configMergerPlugin } from '@bunli/plugin-config'
+
+const cli = await createCLI({
+  name: 'my-build-tool',
+  plugins: [
+    configMergerPlugin({
+      sources: [
+        '~/.config/{{name}}/defaults.json',  // User defaults
+        '.{{name}}rc.json'                    // Project overrides
+      ],
+      mergeStrategy: 'deep'
+    })
+  ]
+})
+```
+
+**User config** (`~/.config/my-build-tool/defaults.json`):
+
+```json
+{
+  "build": {
+    "minify": true,
+    "sourcemap": true,
+    "target": "es2022"
+  },
+  "dev": {
+    "watch": true,
+    "port": 3000
+  }
+}
+```
+
+**Project config** (`.my-build-toolrc.json`):
+
+```json
+{
+  "build": {
+    "target": "es2015",
+    "sourcemap": false
+  }
+}
+```
+
+**Merged result:**
+
+```json
+{
+  "build": {
+    "minify": true,      // From user config
+    "sourcemap": false,  // Overridden by project config
+    "target": "es2015"   // Overridden by project config
+  },
+  "dev": {
+    "watch": true,       // From user config
+    "port": 3000         // From user config
+  }
+}
+```
+
+### Environment-Specific Config
+
+```typescript
+const env = process.env.NODE_ENV || 'development'
+
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [
+    configMergerPlugin({
+      sources: [
+        '.{{name}}rc.json',               // Base config
+        `.{{name}}rc.${env}.json`         // Environment override
+      ]
+    })
+  ]
+})
+```
+
+### Team Shared Config
+
+```typescript
+configMergerPlugin({
+  sources: [
+    '/etc/{{name}}/team-defaults.json',  // Team-wide defaults
+    '~/.config/{{name}}/config.json',    // User preferences
+    '.{{name}}rc.json'                    // Project config
+  ]
+})
+```
+
+## Error Handling
+
+The plugin gracefully handles missing files:
+
+```typescript
+// These are all logged as debug messages, not errors:
+// - File not found
+// - Invalid JSON
+// - Read permission denied
+```
+
+Access the logger in your setup:
+
+```typescript
+const myPlugin = createPlugin({
+  name: 'my-plugin',
+  
+  setup(context) {
+    // Check what config files were loaded
+    context.logger.debug('Final config:', context.config)
+  }
+})
+```
+
+## Source Implementation
+
+```typescript packages/plugin-config/src/index.ts
+import { createPlugin } from '@bunli/core/plugin'
+import { deepMerge } from '@bunli/core/utils'
+import { Result, TaggedError } from 'better-result'
+
+export const configMergerPlugin = createPlugin<ConfigPluginOptions, {}>
+  ((options = {}) => {
+    const sources = options.sources || [
+      '~/.config/{{name}}/config.json',
+      '.{{name}}rc',
+      '.{{name}}rc.json',
+      '.config/{{name}}.json'
+    ]
+    
+    return {
+      name: '@bunli/plugin-config',
+      version: '1.0.0',
+      
+      async setup(context) {
+        const appName = context.config.name || 'bunli'
+        const configs: Array<Record<string, unknown>> = []
+        
+        for (const source of sources) {
+          // Resolve template variables and home directory
+          const configPath = source
+            .replace(/^~/, homedir())
+            .replace(/\{\{name\}\}/g, appName)
+
+          const loadedConfig = await readConfigSource(configPath)
+          if (Result.isError(loadedConfig)) {
+            context.logger.debug(`Config file not found: ${configPath}`)
+            continue
+          }
+
+          configs.push(loadedConfig.value)
+          context.logger.debug(`Loaded config from ${configPath}`)
+
+          if (options.stopOnFirst) {
+            break
+          }
+        }
+        
+        if (configs.length > 0) {
+          // Merge all found configs
+          let merged: Record<string, unknown>
+          
+          if (options.mergeStrategy === 'shallow') {
+            merged = Object.assign({}, ...configs)
+          } else {
+            merged = deepMerge(...configs)
+          }
+          
+          context.updateConfig(merged)
+          context.logger.info(`Merged ${configs.length} config file(s)`)
+        }
+      }
+    }
+  })
+```
+
+## Configuration File Format
+
+Config files must be valid JSON:
+
+```json
+{
+  "build": {
+    "minify": true,
+    "sourcemap": false
+  },
+  "dev": {
+    "watch": true,
+    "port": 3000
+  },
+  "customField": "any value"
+}
+```
+
+## TypeScript Support
+
+Define config types for autocomplete:
+
+```typescript
+interface MyConfig {
+  build: {
+    minify: boolean
+    sourcemap: boolean
+  }
+  dev: {
+    watch: boolean
+    port: number
+  }
+}
+
+const cli = await createCLI<MyConfig>({
+  name: 'my-cli',
+  plugins: [configMergerPlugin()]
+})
+
+// TypeScript knows the config structure
+cli.config.build.minify  // boolean
+```
+
+## Best Practices
+
+### Use Standard Locations
+
+Follow XDG Base Directory specification:
+
+```typescript
+configMergerPlugin({
+  sources: [
+    '~/.config/{{name}}/config.json',  // XDG_CONFIG_HOME
+    '.{{name}}rc.json'                  // Project root
+  ]
+})
+```
+
+### Document Config Options
+
+Provide an example config file:
+
+```bash
+# Generate example config
+my-cli config init
+```
+
+### Validate Merged Config
+
+Use `configResolved` hook:
+
+```typescript
+const validationPlugin = createPlugin({
+  name: 'validate',
+  
+  configResolved(config) {
+    if (config.build?.target && !['es2015', 'es2022'].includes(config.build.target)) {
+      throw new Error(`Invalid target: ${config.build.target}`)
+    }
+  }
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="MCP Plugin" icon="plug" href="/plugins/mcp">
+    Create commands from MCP tools
+  </Card>
+  <Card title="AI Detection" icon="robot" href="/plugins/ai-detect">
+    Detect AI coding assistants
+  </Card>
+  <Card title="Creating Plugins" icon="code" href="/plugins/creating-plugins">
+    Build your own plugins
+  </Card>
+  <Card title="Configuration" icon="gear" href="/essentials/configuration">
+    Learn about CLI configuration
+  </Card>
+</CardGroup>

@@ -1,0 +1,534 @@
+---
+title: Plugin Store
+description: Type-safe shared state management across plugin lifecycle
+---
+
+## Overview
+
+The plugin store provides type-safe shared state that persists across the plugin lifecycle. Each plugin can define its own store schema, and TypeScript enforces type safety throughout.
+
+## Basic Store
+
+Define a store with initial state:
+
+```typescript
+import { createPlugin } from '@bunli/core/plugin'
+
+interface MyStore {
+  count: number
+  user?: string
+}
+
+const plugin = createPlugin<MyStore>({
+  name: 'my-plugin',
+  
+  // Initial store state
+  store: {
+    count: 0
+  },
+  
+  beforeCommand(context) {
+    // TypeScript knows store.count is a number!
+    context.store.count++
+    console.log(`Count: ${context.store.count}`)
+  }
+})
+```
+
+## Type Safety
+
+The store is fully typed with generics:
+
+```typescript
+interface CounterStore {
+  count: number
+  lastCommand?: string
+}
+
+// Type parameter provides compile-time safety
+const counterPlugin = createPlugin<CounterStore>({
+  name: 'counter',
+  
+  store: {
+    count: 0
+  },
+  
+  beforeCommand(context) {
+    // ✅ Valid - count is defined as number
+    context.store.count++
+    
+    // ✅ Valid - lastCommand is optional string
+    context.store.lastCommand = context.command
+    
+    // ❌ Type error - count must be a number
+    // context.store.count = 'invalid'
+    
+    // ❌ Type error - unknown property
+    // context.store.unknown = 123
+  }
+})
+```
+
+## Store Access Methods
+
+Access store values with type-safe methods:
+
+```typescript
+interface UserStore {
+  userId?: string
+  preferences: {
+    theme: 'light' | 'dark'
+  }
+}
+
+const plugin = createPlugin<UserStore>({
+  name: 'user',
+  
+  store: {
+    preferences: { theme: 'light' }
+  },
+  
+  beforeCommand(context) {
+    // Get value (type-safe)
+    const theme = context.getStoreValue('preferences')
+    console.log(theme.theme) // TypeScript knows the structure
+    
+    // Set value (type-checked)
+    context.setStoreValue('userId', 'user-123')
+    
+    // Check existence
+    if (context.hasStoreValue('userId')) {
+      console.log('User is authenticated')
+    }
+  }
+})
+```
+
+## Store Patterns
+
+### Counter Pattern
+
+```typescript
+interface CounterStore {
+  count: number
+}
+
+const counterPlugin = createPlugin<CounterStore>({
+  name: 'counter',
+  
+  store: {
+    count: 0
+  },
+  
+  beforeCommand(context) {
+    context.store.count++
+  },
+  
+  afterCommand(context) {
+    console.log(`Total commands: ${context.store.count}`)
+  }
+})
+```
+
+### Cache Pattern
+
+```typescript
+interface CacheStore {
+  cache: Map<string, any>
+}
+
+const cachePlugin = createPlugin<CacheStore>({
+  name: 'cache',
+  
+  store: {
+    cache: new Map()
+  },
+  
+  beforeCommand(context) {
+    const key = `${context.command}:${JSON.stringify(context.args)}`
+    
+    if (context.store.cache.has(key)) {
+      console.log('Cache hit!')
+      return context.store.cache.get(key)
+    }
+  },
+  
+  afterCommand(context) {
+    const key = `${context.command}:${JSON.stringify(context.args)}`
+    context.store.cache.set(key, context.result)
+  }
+})
+```
+
+### Event Log Pattern
+
+```typescript
+interface LogStore {
+  events: Array<{
+    type: string
+    timestamp: Date
+    data: any
+  }>
+}
+
+const logPlugin = createPlugin<LogStore>({
+  name: 'logger',
+  
+  store: {
+    events: []
+  },
+  
+  beforeCommand(context) {
+    context.store.events.push({
+      type: 'command_start',
+      timestamp: new Date(),
+      data: { command: context.command }
+    })
+  },
+  
+  afterCommand(context) {
+    context.store.events.push({
+      type: 'command_end',
+      timestamp: new Date(),
+      data: {
+        command: context.command,
+        exitCode: context.exitCode
+      }
+    })
+    
+    // Keep only last 100 events
+    if (context.store.events.length > 100) {
+      context.store.events = context.store.events.slice(-100)
+    }
+  }
+})
+```
+
+### Methods in Store
+
+You can include methods in your store:
+
+```typescript
+interface MetricsStore {
+  metrics: {
+    events: Event[]
+    recordEvent: (name: string, data?: any) => void
+    getEvents: (name?: string) => Event[]
+    clearEvents: () => void
+  }
+}
+
+const metricsPlugin = createPlugin<MetricsStore>({
+  name: 'metrics',
+  
+  store: {
+    metrics: {
+      events: [],
+      
+      recordEvent(name, data = {}) {
+        this.events.push({
+          name,
+          timestamp: new Date(),
+          data
+        })
+      },
+      
+      getEvents(name) {
+        return name
+          ? this.events.filter(e => e.name === name)
+          : [...this.events]
+      },
+      
+      clearEvents() {
+        this.events = []
+      }
+    }
+  },
+  
+  beforeCommand(context) {
+    context.store.metrics.recordEvent('command_started', {
+      command: context.command
+    })
+  }
+})
+```
+
+## Store Persistence
+
+The store persists across commands but resets on CLI restart:
+
+```typescript
+interface PersistentStore {
+  sessionId: string
+  commandCount: number
+}
+
+const sessionPlugin = createPlugin<PersistentStore>({
+  name: 'session',
+  
+  store: {
+    sessionId: crypto.randomUUID(),
+    commandCount: 0
+  },
+  
+  beforeCommand(context) {
+    console.log(`Session: ${context.store.sessionId}`)
+    console.log(`Command #${++context.store.commandCount}`)
+    // Same session ID across all commands in this CLI run
+  }
+})
+```
+
+## Store Merging
+
+When multiple plugins define stores, they are merged:
+
+```typescript
+interface StoreA {
+  countA: number
+}
+
+interface StoreB {
+  countB: number
+}
+
+const pluginA = createPlugin<StoreA>({
+  name: 'plugin-a',
+  store: { countA: 0 }
+})
+
+const pluginB = createPlugin<StoreB>({
+  name: 'plugin-b',
+  store: { countB: 0 }
+})
+
+// Both stores are available
+const cli = await createCLI({
+  name: 'my-cli',
+  plugins: [pluginA, pluginB]
+})
+
+// In commands, access merged store:
+// context.store.countA
+// context.store.countB
+```
+
+## Shared Plugin Store
+
+Plugins can share data via the plugin context store:
+
+```typescript
+const writerPlugin = createPlugin({
+  name: 'writer',
+  
+  setup(context) {
+    // Write to shared store
+    context.store.set('shared-data', { value: 123 })
+  }
+})
+
+const readerPlugin = createPlugin({
+  name: 'reader',
+  
+  setup(context) {
+    // Read from shared store
+    const data = context.store.get('shared-data')
+    console.log(data) // { value: 123 }
+  }
+})
+```
+
+## Real-World Example
+
+Complete metrics plugin from Bunli examples:
+
+```typescript examples/dev-server/plugins/metrics.ts
+import { createPlugin } from '@bunli/core/plugin'
+
+interface MetricsStore {
+  metrics: {
+    events: Array<{
+      name: string
+      timestamp: Date
+      data: Record<string, any>
+    }>
+    recordEvent: (name: string, data?: Record<string, any>) => void
+    getEvents: (name?: string) => Array<any>
+    clearEvents: () => void
+  }
+}
+
+export const metricsPlugin = createPlugin<MetricsStore>({
+  name: 'metrics',
+  
+  store: {
+    metrics: {
+      events: [],
+      
+      recordEvent(name: string, data: Record<string, any> = {}) {
+        this.events.push({
+          name,
+          timestamp: new Date(),
+          data
+        })
+        
+        // Keep only last 100 events to prevent memory leaks
+        if (this.events.length > 100) {
+          this.events = this.events.slice(-100)
+        }
+      },
+      
+      getEvents(name?: string) {
+        if (name) {
+          return this.events.filter(event => event.name === name)
+        }
+        return [...this.events]
+      },
+      
+      clearEvents() {
+        this.events = []
+      }
+    }
+  },
+  
+  beforeCommand({ store, command }) {
+    // Record command start
+    store.metrics.recordEvent('command_started', {
+      command: command,
+      timestamp: new Date().toISOString()
+    })
+  },
+  
+  afterCommand({ store, command }) {
+    // Record command completion
+    store.metrics.recordEvent('command_completed', {
+      command: command,
+      timestamp: new Date().toISOString()
+    })
+  }
+})
+```
+
+## Best Practices
+
+### Keep Stores Lightweight
+
+```typescript
+// ✅ Good - lightweight state
+interface GoodStore {
+  count: number
+  lastCommand: string
+}
+
+// ❌ Bad - heavy objects
+interface BadStore {
+  cache: Map<string, LargeObject>
+  history: LargeArray[]
+}
+```
+
+### Use Methods for Logic
+
+```typescript
+// ✅ Good - encapsulate logic in methods
+interface GoodStore {
+  items: string[]
+  addItem: (item: string) => void
+  removeItem: (item: string) => void
+}
+
+// ❌ Bad - manipulate arrays directly
+beforeCommand(context) {
+  context.store.items.push('new-item')
+  context.store.items = context.store.items.filter(i => i !== 'old')
+}
+```
+
+### Never Use Object.freeze()
+
+```typescript
+// ❌ BAD - breaks Zod validation!
+store: Object.freeze({
+  count: 0
+})
+
+// ✅ Good - plain objects
+store: {
+  count: 0
+}
+```
+
+### Prevent Memory Leaks
+
+```typescript
+interface SafeStore {
+  events: Event[]
+}
+
+const safePlugin = createPlugin<SafeStore>({
+  name: 'safe',
+  store: { events: [] },
+  
+  afterCommand(context) {
+    context.store.events.push(/* ... */)
+    
+    // Keep only last N items
+    if (context.store.events.length > 100) {
+      context.store.events = context.store.events.slice(-100)
+    }
+  }
+})
+```
+
+## Type Inference
+
+Leverage TypeScript's type inference:
+
+```typescript
+// Store type is inferred from generic
+const plugin = createPlugin<{ count: number }>({
+  name: 'inferred',
+  store: { count: 0 },
+  
+  beforeCommand(context) {
+    // TypeScript knows context.store.count is number
+    context.store.count++
+  }
+})
+
+// Extract store type
+type PluginStore = InferPluginStore<typeof plugin>
+// { count: number }
+```
+
+## Testing Store Behavior
+
+```typescript
+import { testPluginHooks } from '@bunli/core/plugin'
+
+const results = await testPluginHooks(myPlugin, {
+  store: { count: 0 }
+})
+
+if (results.beforeCommand?.success) {
+  const ctx = results.beforeCommand.context
+  console.log('Store after beforeCommand:', ctx.store)
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Plugins" icon="code" href="/plugins/creating-plugins">
+    Build plugins with stores
+  </Card>
+  <Card title="Plugin Hooks" icon="hook" href="/plugins/plugin-hooks">
+    Learn about lifecycle hooks
+  </Card>
+  <Card title="Official Plugins" icon="puzzle-piece" href="/plugins/ai-detect">
+    Study real store implementations
+  </Card>
+  <Card title="TypeScript" icon="code" href="/guides/typescript">
+    Master type-safe patterns
+  </Card>
+</CardGroup>

@@ -1,0 +1,772 @@
+---
+title: Components
+description: Pre-built UI components for terminal interfaces
+---
+
+# Components
+
+Bunli provides a rich library of pre-built components for building terminal UIs. Components are styled with OpenTUI and themeable via `ThemeProvider`.
+
+## Import Paths
+
+```typescript
+// Core components
+import { Form, Alert, ProgressBar } from '@bunli/tui'
+
+// Interactive components
+import { Modal, Menu, CommandPalette } from '@bunli/tui/interactive'
+
+// Chart components
+import { BarChart, LineChart, Sparkline } from '@bunli/tui/charts'
+```
+
+## Form Components
+
+### Form
+
+Schema-driven form container with validation:
+
+```typescript
+import { Form, FormField, SelectField } from '@bunli/tui'
+import { useRenderer } from '@bunli/tui'
+import { z } from 'zod'
+
+const schema = z.object({
+  name: z.string().min(1, 'Name required'),
+  env: z.enum(['dev', 'staging', 'prod'])
+})
+
+function ConfigForm() {
+  const renderer = useRenderer()
+
+  return (
+    <Form
+      title="Configuration"
+      schema={schema}
+      onSubmit={(values) => {
+        console.log('Submitted:', values)
+        renderer.destroy()
+      }}
+      onCancel={() => renderer.destroy()}
+    >
+      <FormField
+        name="name"
+        label="Project Name"
+        placeholder="my-project"
+        required
+      />
+
+      <SelectField
+        name="env"
+        label="Environment"
+        options={[
+          { label: 'Development', value: 'dev' },
+          { label: 'Staging', value: 'staging' },
+          { label: 'Production', value: 'prod' }
+        ]}
+        required
+      />
+    </Form>
+  )
+}
+```
+
+**Props:**
+- `title: string` - Form title
+- `schema: StandardSchemaV1` - Validation schema (Zod, Valibot, etc.)
+- `onSubmit: (values) => void | Promise<void>` - Submit handler
+- `onCancel?: () => void` - Cancel handler
+- `initialValues?: Partial<T>` - Initial form values
+- `validateOnChange?: boolean` - Validate while typing (default: `true`)
+- `submitHint?: string` - Custom submit hint
+
+**Keyboard Shortcuts:**
+- `Tab` / `Shift+Tab` - Navigate fields
+- `Enter` - Submit form
+- `Ctrl+S` - Force submit
+- `Ctrl+R` - Reset form
+- `Esc` - Cancel
+- `F8` / `Shift+F8` - Jump to next/previous error
+
+### SchemaForm
+
+Higher-level form builder with field descriptors:
+
+```typescript
+import { SchemaForm } from '@bunli/tui'
+import { z } from 'zod'
+
+const schema = z.object({
+  service: z.string(),
+  replicas: z.number().int().min(1),
+  telemetry: z.boolean(),
+  notes: z.string().optional()
+})
+
+function DeployForm() {
+  return (
+    <SchemaForm
+      title="Deploy Configuration"
+      schema={schema}
+      fields={[
+        {
+          kind: 'text',
+          name: 'service',
+          label: 'Service Name',
+          required: true
+        },
+        {
+          kind: 'number',
+          name: 'replicas',
+          label: 'Replicas',
+          defaultValue: 3
+        },
+        {
+          kind: 'checkbox',
+          name: 'telemetry',
+          label: 'Enable Telemetry',
+          defaultValue: true
+        },
+        {
+          kind: 'textarea',
+          name: 'notes',
+          label: 'Release Notes',
+          visibleWhen: (values) => values.service === 'api'
+        }
+      ]}
+      onSubmit={(values) => console.log(values)}
+    />
+  )
+}
+```
+
+**Field Types:**
+- `text` - Text input
+- `number` - Number input
+- `password` - Password input
+- `textarea` - Multi-line text
+- `select` - Single selection
+- `multiselect` - Multiple selections
+- `checkbox` - Boolean checkbox
+
+### FormField (Input)
+
+Controlled text input field:
+
+```typescript
+<FormField
+  name="username"
+  label="Username"
+  placeholder="john.doe"
+  description="Enter your username"
+  required
+  defaultValue=""
+  onChange={(value) => console.log(value)}
+/>
+```
+
+### SelectField
+
+Controlled select dropdown:
+
+```typescript
+<SelectField
+  name="region"
+  label="Region"
+  options={[
+    { label: 'US East', value: 'us-east', hint: 'Virginia' },
+    { label: 'US West', value: 'us-west', hint: 'Oregon' },
+    { label: 'EU Central', value: 'eu-central', disabled: true }
+  ]}
+  defaultValue="us-east"
+  onChange={(value) => console.log(value)}
+/>
+```
+
+### Other Form Fields
+
+```typescript
+import {
+  NumberField,
+  PasswordField,
+  TextareaField,
+  CheckboxField,
+  MultiSelectField
+} from '@bunli/tui'
+
+// Number input
+<NumberField
+  name="port"
+  label="Port"
+  min={1}
+  max={65535}
+  defaultValue={3000}
+/>
+
+// Password input
+<PasswordField
+  name="password"
+  label="Password"
+  required
+/>
+
+// Multi-line text
+<TextareaField
+  name="description"
+  label="Description"
+  rows={5}
+/>
+
+// Checkbox
+<CheckboxField
+  name="agree"
+  label="I agree to the terms"
+  defaultValue={false}
+/>
+
+// Multi-select
+<MultiSelectField
+  name="tags"
+  label="Tags"
+  options={[
+    { label: 'Bug', value: 'bug' },
+    { label: 'Feature', value: 'feature' },
+    { label: 'Docs', value: 'docs' }
+  ]}
+/>
+```
+
+## Layout Components
+
+### Container
+
+```typescript
+import { Container } from '@bunli/tui'
+
+<Container
+  maxWidth={80}
+  padding={2}
+  centered
+>
+  <text>Centered content</text>
+</Container>
+```
+
+### Stack
+
+```typescript
+import { Stack } from '@bunli/tui'
+
+<Stack direction="vertical" gap={2}>
+  <text>Item 1</text>
+  <text>Item 2</text>
+  <text>Item 3</text>
+</Stack>
+
+<Stack direction="horizontal" gap={4}>
+  <text>Left</text>
+  <text>Right</text>
+</Stack>
+```
+
+### Grid
+
+```typescript
+import { Grid } from '@bunli/tui'
+
+<Grid cols={2} gap={2}>
+  <box>Cell 1</box>
+  <box>Cell 2</box>
+  <box>Cell 3</box>
+  <box>Cell 4</box>
+</Grid>
+```
+
+### Panel
+
+```typescript
+import { Panel } from '@bunli/tui'
+
+<Panel
+  title="System Info"
+  footer="Press q to quit"
+  padding={2}
+>
+  <text>CPU: 45%</text>
+  <text>Memory: 2.3 GB</text>
+</Panel>
+```
+
+### Card
+
+```typescript
+import { Card } from '@bunli/tui'
+
+<Card title="Deployment" padding={2}>
+  <text>Status: Running</text>
+  <text>Uptime: 3 days</text>
+</Card>
+```
+
+## Feedback Components
+
+### Alert
+
+```typescript
+import { Alert } from '@bunli/tui'
+
+<Alert
+  tone="success"
+  title="Success"
+  message="Deployment completed successfully"
+/>
+
+<Alert
+  tone="warning"
+  message="Resource usage is high"
+/>
+
+<Alert
+  tone="danger"
+  title="Error"
+  message="Connection failed"
+/>
+
+<Alert
+  tone="info"
+  message="New version available"
+/>
+```
+
+**Props:**
+- `tone?: 'info' | 'success' | 'warning' | 'danger'` (default: `'info'`)
+- `title?: string`
+- `message: string`
+- `emphasis?: 'subtle' | 'bold'` (default: `'subtle'`)
+
+### Badge
+
+```typescript
+import { Badge } from '@bunli/tui'
+
+<Badge tone="success">Active</Badge>
+<Badge tone="warning">Pending</Badge>
+<Badge tone="danger">Failed</Badge>
+<Badge tone="info">New</Badge>
+```
+
+### ProgressBar
+
+```typescript
+import { ProgressBar } from '@bunli/tui'
+import { useState, useEffect } from 'react'
+
+function UploadProgress() {
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setProgress((p) => Math.min(p + 10, 100))
+    }, 500)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <ProgressBar
+      value={progress}
+      label="Uploading..."
+      color="#00ff00"
+    />
+  )
+}
+```
+
+### Toast
+
+```typescript
+import { Toast } from '@bunli/tui'
+
+<Toast
+  tone="success"
+  message="File saved"
+  duration={3000}
+  onDismiss={() => console.log('dismissed')}
+/>
+```
+
+### EmptyState
+
+```typescript
+import { EmptyState } from '@bunli/tui'
+
+<EmptyState
+  icon="📭"
+  title="No items found"
+  description="Start by adding your first item"
+/>
+```
+
+## Data Display Components
+
+### KeyValueList
+
+```typescript
+import { KeyValueList } from '@bunli/tui'
+
+<KeyValueList
+  items={[
+    { key: 'Name', value: 'My App' },
+    { key: 'Version', value: '1.0.0' },
+    { key: 'Environment', value: 'Production' },
+    { key: 'Region', value: 'US East' }
+  ]}
+/>
+```
+
+### Stat
+
+```typescript
+import { Stat } from '@bunli/tui'
+
+<Stat
+  label="Requests"
+  value="1,234"
+  change="+12%"
+  trend="up"
+/>
+```
+
+### DataTable
+
+```typescript
+import { DataTable } from '@bunli/tui'
+
+function UsersTable() {
+  const [selectedRow, setSelectedRow] = useState(null)
+
+  return (
+    <DataTable
+      columns={[
+        { key: 'id', label: 'ID', width: 10, sortable: true },
+        { key: 'name', label: 'Name', width: 20, sortable: true },
+        { key: 'email', label: 'Email', width: 30 },
+        { key: 'role', label: 'Role', width: 15 }
+      ]}
+      rows={[
+        { id: 1, name: 'Alice', email: 'alice@example.com', role: 'Admin' },
+        { id: 2, name: 'Bob', email: 'bob@example.com', role: 'User' },
+        { id: 3, name: 'Charlie', email: 'charlie@example.com', role: 'User' }
+      ]}
+      selectedRow={selectedRow}
+      onRowSelect={setSelectedRow}
+    />
+  )
+}
+```
+
+**Keyboard Navigation:**
+- `↑`/`↓` or `k`/`j` - Navigate rows
+- `←`/`→` or `h`/`l` - Change sort column
+- `Enter` - Select row
+
+### List & Table (Simple)
+
+```typescript
+import { List, Table } from '@bunli/tui/interactive'
+
+// Simple list
+<List
+  items={['Item 1', 'Item 2', 'Item 3']}
+  bullet="•"
+/>
+
+<List
+  items={['Step 1', 'Step 2', 'Step 3']}
+  ordered
+/>
+
+// Simple table
+<Table
+  columns={[
+    { key: 'name', label: 'Name' },
+    { key: 'age', label: 'Age' }
+  ]}
+  rows={[
+    { name: 'Alice', age: 30 },
+    { name: 'Bob', age: 25 }
+  ]}
+/>
+```
+
+## Navigation Components
+
+### Tabs
+
+```typescript
+import { Tabs } from '@bunli/tui'
+import { useState } from 'react'
+
+function TabbedView() {
+  const [activeTab, setActiveTab] = useState('overview')
+
+  return (
+    <Tabs
+      tabs={[
+        { id: 'overview', label: 'Overview' },
+        { id: 'details', label: 'Details' },
+        { id: 'settings', label: 'Settings' }
+      ]}
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+    >
+      {activeTab === 'overview' && <text>Overview content</text>}
+      {activeTab === 'details' && <text>Details content</text>}
+      {activeTab === 'settings' && <text>Settings content</text>}
+    </Tabs>
+  )
+}
+```
+
+**Keyboard:** `←`/`→` or `h`/`l` to switch tabs
+
+### Menu
+
+```typescript
+import { Menu } from '@bunli/tui'
+import { useRenderer } from '@bunli/tui'
+
+function ActionsMenu() {
+  const renderer = useRenderer()
+
+  return (
+    <Menu
+      title="Actions"
+      items={[
+        { id: 'deploy', label: 'Deploy', icon: '🚀' },
+        { id: 'rollback', label: 'Rollback', icon: '↩️' },
+        { id: 'logs', label: 'View Logs', icon: '📋' },
+        { id: 'exit', label: 'Exit', icon: '❌', danger: true }
+      ]}
+      onSelect={(item) => {
+        if (item.id === 'exit') {
+          renderer.destroy()
+        } else {
+          console.log('Selected:', item.id)
+        }
+      }}
+    />
+  )
+}
+```
+
+**Keyboard:** `↑`/`↓` or `k`/`j`, `Enter` to select
+
+### CommandPalette
+
+```typescript
+import { CommandPalette } from '@bunli/tui'
+
+function PaletteExample() {
+  return (
+    <CommandPalette
+      items={[
+        { id: 'new', label: 'New Project', keywords: ['create', 'init'] },
+        { id: 'open', label: 'Open Project', keywords: ['load'] },
+        { id: 'save', label: 'Save', keywords: ['write'] },
+        { id: 'deploy', label: 'Deploy', keywords: ['publish', 'ship'] }
+      ]}
+      onSelect={(item) => console.log('Selected:', item.id)}
+      onCancel={() => console.log('Cancelled')}
+      placeholder="Type to search..."
+    />
+  )
+}
+```
+
+**Keyboard:** Type to filter, `↑`/`↓` to navigate, `Enter` to select
+
+### Modal
+
+```typescript
+import { Modal } from '@bunli/tui'
+import { useState } from 'react'
+
+function ConfirmDialog() {
+  const [open, setOpen] = useState(true)
+
+  return (
+    <Modal
+      open={open}
+      title="Confirm Action"
+      onClose={() => setOpen(false)}
+    >
+      <box style={{ flexDirection: 'column', gap: 2 }}>
+        <text>Are you sure you want to proceed?</text>
+        <box style={{ gap: 2 }}>
+          <button onClick={() => {
+            console.log('Confirmed')
+            setOpen(false)
+          }}>Confirm</button>
+          <button onClick={() => setOpen(false)}>Cancel</button>
+        </box>
+      </box>
+    </Modal>
+  )
+}
+```
+
+**Keyboard:** `Esc` to close, `Tab` for focus trap
+
+## Chart Components
+
+### BarChart
+
+```typescript
+import { BarChart } from '@bunli/tui/charts'
+
+<BarChart
+  series={[
+    {
+      name: 'Builds',
+      points: [
+        { label: 'Mon', value: 12 },
+        { label: 'Tue', value: -5 },
+        { label: 'Wed', value: 8 },
+        { label: 'Thu', value: null }, // Sparse data
+        { label: 'Fri', value: 15 }
+      ]
+    },
+    {
+      name: 'Tests',
+      points: [
+        { label: 'Mon', value: 45 },
+        { label: 'Tue', value: 38 },
+        { label: 'Wed', value: 52 },
+        { label: 'Thu', value: 40 },
+        { label: 'Fri', value: 48 }
+      ]
+    }
+  ]}
+  axis={{
+    yLabel: 'Count',
+    xLabel: 'Day of Week',
+    showRange: true
+  }}
+  width={48}
+  palette={['#00ff00', '#00ffff']}
+/>
+```
+
+### LineChart
+
+```typescript
+import { LineChart } from '@bunli/tui/charts'
+
+<LineChart
+  series={{
+    name: 'Latency (ms)',
+    points: [
+      { value: 120 },
+      { value: 98 },
+      { value: 104 },
+      { value: null },
+      { value: 115 },
+      { value: 92 }
+    ]
+  }}
+  axis={{
+    yLabel: 'Response Time',
+    showRange: true
+  }}
+  width={60}
+  color="#ff00ff"
+/>
+```
+
+### Sparkline
+
+```typescript
+import { Sparkline } from '@bunli/tui/charts'
+
+<box style={{ flexDirection: 'row', gap: 2 }}>
+  <text>CPU:</text>
+  <Sparkline
+    values={[45, 52, 48, 60, 55, 58, 50]}
+    color="#00ff00"
+    width={20}
+  />
+  <text>58%</text>
+</box>
+```
+
+## Theming
+
+### ThemeProvider
+
+```typescript
+import { ThemeProvider, createTheme } from '@bunli/tui'
+
+const customTheme = createTheme({
+  preset: 'dark',
+  tokens: {
+    accent: '#3ec7ff',
+    textSuccess: '#3cd89b',
+    textDanger: '#ff5555'
+  }
+})
+
+function App() {
+  return (
+    <ThemeProvider theme={customTheme}>
+      <Panel title="Themed App">
+        <Alert tone="success" message="Using custom theme" />
+      </Panel>
+    </ThemeProvider>
+  )
+}
+```
+
+### Theme Presets
+
+```typescript
+// Dark theme (default)
+<ThemeProvider theme="dark">
+
+// Light theme
+<ThemeProvider theme="light">
+
+// Auto-detect from environment
+<ThemeProvider theme="auto">
+
+// Custom tokens only
+<ThemeProvider theme={{ accent: '#ff00ff' }}>
+```
+
+### Use Theme Hook
+
+```typescript
+import { useTuiTheme } from '@bunli/tui'
+
+function ThemedComponent() {
+  const { tokens } = useTuiTheme()
+
+  return (
+    <box style={{ backgroundColor: tokens.background }}>
+      <text fg={tokens.textPrimary}>Primary Text</text>
+      <text fg={tokens.textMuted}>Muted Text</text>
+      <text fg={tokens.accent}>Accent Text</text>
+    </box>
+  )
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Interactive UIs" icon="window" href="/tui/interactive-uis">
+    Build full interactive interfaces
+  </Card>
+  <Card title="Prompts" icon="terminal" href="/tui/prompts">
+    Learn about prompt APIs
+  </Card>
+</CardGroup>

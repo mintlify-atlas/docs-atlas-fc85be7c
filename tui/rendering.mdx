@@ -1,0 +1,526 @@
+---
+title: Rendering
+description: Understand the TUI rendering system and React integration
+---
+
+# Rendering
+
+Bunli's rendering system bridges React components with OpenTUI's terminal renderer, providing a declarative way to build terminal UIs.
+
+## Renderer Lifecycle
+
+The rendering lifecycle is managed by `@bunli/runtime`:
+
+```typescript
+// From packages/runtime/src/renderer.tsx
+
+export async function runTuiRender(args: RunTuiRenderArgs): Promise<void> {
+  const component = args.command.render?.(args)
+
+  if (!component) {
+    throw new Error('TUI render result is missing')
+  }
+
+  const renderer = await createCliRenderer(
+    resolveOpenTuiRendererOptions(args.rendererOptions)
+  )
+
+  try {
+    const done = new Promise<void>((resolve) => {
+      renderer.once(CliRenderEvents.DESTROY, () => resolve())
+    })
+
+    const root = createReactRoot(renderer)
+    root.render(
+      <AppRuntimeProvider>
+        {component}
+      </AppRuntimeProvider>
+    )
+
+    await done
+  } finally {
+    renderer.destroy()
+  }
+}
+```
+
+### Key Lifecycle Events
+
+1. **Component Creation** - `command.render()` returns JSX
+2. **Renderer Initialization** - OpenTUI renderer created
+3. **React Root Creation** - React renderer attached
+4. **Runtime Provider Wrap** - Context providers injected
+5. **Render Loop** - React renders to terminal
+6. **Destroy Event** - `renderer.destroy()` triggers exit
+7. **Cleanup** - Renderer and React root disposed
+
+## Renderer API
+
+### useRenderer Hook
+
+Access the renderer instance:
+
+```typescript
+import { useRenderer } from '@bunli/tui'
+
+function MyComponent() {
+  const renderer = useRenderer()
+
+  const handleExit = () => {
+    renderer.destroy() // Exit the TUI
+  }
+
+  const showConsole = () => {
+    renderer.console.show() // Show native console
+  }
+
+  return <box>{/* ... */}</box>
+}
+```
+
+### Renderer Properties
+
+```typescript
+interface CliRenderer {
+  // Destroy the renderer and exit
+  destroy(): void
+
+  // Access the console API
+  console: {
+    show(): void
+    hide(): void
+  }
+
+  // Event emitter
+  on(event: string, handler: Function): void
+  once(event: string, handler: Function): void
+  off(event: string, handler: Function): void
+
+  // Terminal dimensions
+  width: number
+  height: number
+}
+```
+
+## Rendering React Components
+
+### Basic Component
+
+```typescript
+import { defineCommand } from '@bunli/core'
+
+function WelcomeScreen() {
+  return (
+    <box title="Welcome" border padding={2}>
+      <text>Welcome to My App!</text>
+    </box>
+  )
+}
+
+export const welcome = defineCommand({
+  name: 'welcome',
+  render: () => <WelcomeScreen />
+})
+```
+
+### With State
+
+```typescript
+import { useState, useEffect } from 'react'
+import { useRenderer } from '@bunli/tui'
+
+function CountdownTimer() {
+  const [count, setCount] = useState(10)
+  const renderer = useRenderer()
+
+  useEffect(() => {
+    if (count === 0) {
+      renderer.destroy()
+      return
+    }
+
+    const timer = setTimeout(() => setCount(count - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [count, renderer])
+
+  return (
+    <box border padding={2}>
+      <text>Countdown: {count}</text>
+    </box>
+  )
+}
+```
+
+### Async Data Loading
+
+```typescript
+import { useState, useEffect } from 'react'
+
+function DataView() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchData().then((result) => {
+      setData(result)
+      setLoading(false)
+    })
+  }, [])
+
+  if (loading) {
+    return <text>Loading...</text>
+  }
+
+  return (
+    <box>
+      <text>Data: {JSON.stringify(data)}</text>
+    </box>
+  )
+}
+```
+
+## Terminal Dimensions
+
+### Get Current Dimensions
+
+```typescript
+import { useTerminalDimensions } from '@bunli/tui'
+
+function ResponsiveLayout() {
+  const { width, height } = useTerminalDimensions()
+
+  return (
+    <box>
+      <text>Terminal: {width}x{height}</text>
+      {width > 80 && <text>Wide layout</text>}
+      {width <= 80 && <text>Narrow layout</text>}
+    </box>
+  )
+}
+```
+
+### Handle Resize Events
+
+```typescript
+import { useOnResize } from '@bunli/tui'
+import { useState } from 'react'
+
+function AdaptiveUI() {
+  const [cols, setCols] = useState(80)
+  const [rows, setRows] = useState(24)
+
+  useOnResize((width, height) => {
+    setCols(width)
+    setRows(height)
+  })
+
+  return (
+    <box>
+      <text>Columns: {cols}</text>
+      <text>Rows: {rows}</text>
+    </box>
+  )
+}
+```
+
+## OpenTUI Primitives
+
+Bunli exposes OpenTUI's primitive components:
+
+### Box
+
+```typescript
+<box
+  title="My Box"
+  border
+  padding={2}
+  style={{
+    flexDirection: 'column',
+    gap: 1,
+    backgroundColor: '#1e1e1e',
+    borderColor: '#444'
+  }}
+>
+  {/* children */}
+</box>
+```
+
+### Text
+
+```typescript
+import { bold, fg, italic } from '@bunli/tui'
+
+<text
+  content="Hello World"
+  fg="#00ff00"
+  bg="#000000"
+  bold
+  italic
+/>
+
+// Or use style helpers
+<text content={bold(fg('#00ff00', 'Hello'))} />
+```
+
+### Input
+
+```typescript
+import { useState } from 'react'
+
+function InputExample() {
+  const [value, setValue] = useState('')
+
+  return (
+    <input
+      value={value}
+      placeholder="Type here..."
+      onChange={(newValue) => setValue(newValue)}
+      onSubmit={() => console.log('Submitted:', value)}
+    />
+  )
+}
+```
+
+### Select
+
+```typescript
+function SelectExample() {
+  const [selected, setSelected] = useState('option1')
+
+  return (
+    <select
+      options={[
+        { label: 'Option 1', value: 'option1' },
+        { label: 'Option 2', value: 'option2' },
+        { label: 'Option 3', value: 'option3' }
+      ]}
+      value={selected}
+      onChange={setSelected}
+    />
+  )
+}
+```
+
+### ScrollBox
+
+```typescript
+function LongContent() {
+  const items = Array.from({ length: 100 }, (_, i) => `Item ${i + 1}`)
+
+  return (
+    <scrollbox height={10}>
+      <box style={{ flexDirection: 'column' }}>
+        {items.map((item) => (
+          <text key={item} content={item} />
+        ))}
+      </box>
+    </scrollbox>
+  )
+}
+```
+
+## Renderer Configuration
+
+### Global Configuration
+
+```typescript
+import { createCLI } from '@bunli/core'
+
+const cli = await createCLI({
+  name: 'my-app',
+  tui: {
+    renderer: {
+      bufferMode: 'alternate',  // 'standard' | 'alternate'
+      useMouse: true,           // Enable mouse events
+      useAltScreen: true        // Use alternate screen buffer
+    }
+  }
+})
+```
+
+### Command-Level Configuration
+
+```typescript
+export const dashboard = defineCommand({
+  name: 'dashboard',
+  render: () => <Dashboard />,
+  tui: {
+    renderer: {
+      bufferMode: 'alternate', // Override global config
+      useMouse: true
+    }
+  }
+})
+```
+
+## Renderer Options (Runtime)
+
+```typescript
+// From packages/runtime/src/options.ts
+
+export interface OpenTuiRendererOptions {
+  // Use alternate screen buffer
+  useAlternateScreen?: boolean
+
+  // Enable mouse events
+  useMouse?: boolean
+
+  // Stdin/stdout/stderr overrides
+  stdin?: NodeJS.ReadableStream
+  stdout?: NodeJS.WritableStream
+  stderr?: NodeJS.WritableStream
+}
+
+export interface TuiRenderOptions {
+  // Buffer mode: 'standard' or 'alternate'
+  bufferMode?: 'standard' | 'alternate'
+
+  // Enable mouse tracking
+  useMouse?: boolean
+}
+
+export function resolveOpenTuiRendererOptions(
+  options?: TuiRenderOptions
+): OpenTuiRendererOptions {
+  return {
+    useAlternateScreen: options?.bufferMode === 'alternate',
+    useMouse: options?.useMouse ?? false
+  }
+}
+```
+
+## AppRuntimeProvider
+
+The runtime provider wraps all rendered components:
+
+```typescript
+// From packages/runtime/src/runtime/app-runtime.tsx
+
+export function AppRuntimeProvider({ children }: AppRuntimeProviderProps) {
+  return (
+    <FocusScopeProvider>
+      <OverlayHostProvider>
+        <DialogProvider>
+          <CommandRegistryProvider>
+            <RouteStoreProvider>
+              {children}
+            </RouteStoreProvider>
+          </CommandRegistryProvider>
+        </DialogProvider>
+      </OverlayHostProvider>
+    </FocusScopeProvider>
+  )
+}
+```
+
+This provides:
+- **FocusScopeProvider** - Keyboard focus management
+- **OverlayHostProvider** - Modal/overlay rendering
+- **DialogProvider** - Dialog management
+- **CommandRegistryProvider** - Command palette support
+- **RouteStoreProvider** - Navigation state
+
+## Performance Considerations
+
+### Minimize Re-renders
+
+```typescript
+import { memo } from 'react'
+
+const ExpensiveComponent = memo(function ExpensiveComponent({ data }) {
+  // Complex rendering logic
+  return <box>{/* ... */}</box>
+})
+```
+
+### Use useCallback for Event Handlers
+
+```typescript
+import { useCallback } from 'react'
+import { useKeyboard, useRenderer } from '@bunli/tui'
+
+function OptimizedComponent() {
+  const renderer = useRenderer()
+
+  const handleKeyPress = useCallback((key) => {
+    if (key.name === 'q') {
+      renderer.destroy()
+    }
+  }, [renderer])
+
+  useKeyboard(handleKeyPress)
+
+  return <box>{/* ... */}</box>
+}
+```
+
+### Batch Updates
+
+```typescript
+import { createSyncBatcher } from '@bunli/tui'
+
+const batcher = createSyncBatcher({
+  delay: 16, // ~60fps
+  maxBatchSize: 100
+})
+
+function StreamingData() {
+  const [items, setItems] = useState([])
+
+  useEffect(() => {
+    const stream = dataStream()
+    stream.on('data', (item) => {
+      batcher.add(() => {
+        setItems((prev) => [...prev, item])
+      })
+    })
+  }, [])
+
+  return <box>{/* ... */}</box>
+}
+```
+
+## Error Boundaries
+
+```typescript
+import { Component } from 'react'
+
+class TUIErrorBoundary extends Component {
+  state = { hasError: false, error: null }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <box border padding={2}>
+          <text fg="#ff0000">Error: {this.state.error.message}</text>
+        </box>
+      )
+    }
+
+    return this.props.children
+  }
+}
+
+function SafeApp() {
+  return (
+    <TUIErrorBoundary>
+      <App />
+    </TUIErrorBoundary>
+  )
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Components" icon="shapes" href="/tui/components">
+    Explore available UI components
+  </Card>
+  <Card title="Interactive UIs" icon="window" href="/tui/interactive-uis">
+    Build full interactive interfaces
+  </Card>
+</CardGroup>

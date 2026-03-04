@@ -1,0 +1,546 @@
+---
+title: 'Dev Server'
+description: 'Development server CLI demonstrating advanced plugin system and configuration management'
+---
+
+## Overview
+
+The Dev Server example demonstrates advanced Bunli patterns including the plugin system, configuration management, long-running processes, and type-safe plugin context access. This is the most comprehensive example showcasing production-ready patterns.
+
+**Location:** `examples/dev-server/`
+
+## Quick Start
+
+```bash
+cd examples/dev-server
+bun install
+
+# Run commands
+bun cli.ts start --port 3000 --watch --open
+bun cli.ts build --output dist --minify
+bun cli.ts env --list
+bun cli.ts logs --follow
+```
+
+## Project Structure
+
+```
+dev-server/
+├── cli.ts              # CLI entry point with plugins
+├── commands/
+│   ├── start.ts        # Long-running server process
+│   ├── build.ts        # Build with plugin integration
+│   ├── env.ts         # Environment management
+│   ├── logs.ts        # Log viewing and following
+│   └── store-guards.ts # Type guards for plugin stores
+├── plugins/
+│   └── metrics.ts     # Custom metrics plugin
+├── bunli.config.ts     # Configuration
+├── package.json        # Dependencies
+└── README.md          # Documentation
+```
+
+## Plugin System
+
+### Custom Metrics Plugin
+
+Demonstrates creating a custom plugin with lifecycle hooks.
+
+**Source:** `plugins/metrics.ts`
+
+```typescript
+import { createPlugin } from '@bunli/core/plugin'
+
+interface MetricsStore {
+  metrics: {
+    events: Array<{
+      name: string
+      timestamp: Date
+      data: Record<string, any>
+    }>
+    recordEvent: (name: string, data?: Record<string, any>) => void
+    getEvents: (name?: string) => Array<any>
+    clearEvents: () => void
+  }
+}
+
+export const metricsPlugin = createPlugin<MetricsStore>({
+  name: 'metrics',
+  store: {
+    metrics: {
+      events: [],
+      recordEvent(name: string, data: Record<string, any> = {}) {
+        this.events.push({
+          name,
+          timestamp: new Date(),
+          data
+        })
+        
+        // Keep only last 100 events to prevent memory leaks
+        if (this.events.length > 100) {
+          this.events = this.events.slice(-100)
+        }
+      },
+      getEvents(name?: string) {
+        if (name) {
+          return this.events.filter(event => event.name === name)
+        }
+        return [...this.events]
+      },
+      clearEvents() {
+        this.events = []
+      }
+    }
+  },
+  
+  beforeCommand({ store, command }) {
+    // Record command start
+    store.metrics.recordEvent('command_started', {
+      command: command,
+      timestamp: new Date().toISOString()
+    })
+  },
+  
+  afterCommand({ store, command }) {
+    // Record command completion
+    store.metrics.recordEvent('command_completed', {
+      command: command,
+      timestamp: new Date().toISOString()
+    })
+  }
+})
+```
+
+**Key Features:**
+
+- **Store Management**: Type-safe plugin store
+- **Lifecycle Hooks**: `beforeCommand`, `afterCommand`
+- **Event Recording**: Automatic command tracking
+- **Memory Management**: Event cleanup (last 100 events)
+
+### CLI Integration
+
+**Source:** `cli.ts`
+
+```typescript
+#!/usr/bin/env bun
+import { createCLI } from '@bunli/core'
+import { configMergerPlugin } from '@bunli/plugin-config'
+import { aiAgentPlugin } from '@bunli/plugin-ai-detect'
+import { metricsPlugin } from './plugins/metrics.js'
+
+import startCommand from './commands/start.js'
+import buildCommand from './commands/build.js'
+import envCommand from './commands/env.js'
+import logsCommand from './commands/logs.js'
+
+const cli = await createCLI({
+  plugins: [
+    configMergerPlugin({
+      sources: ['.devserverrc.json', 'devserver.config.json']
+    }),
+    aiAgentPlugin({ verbose: true }),
+    metricsPlugin
+  ] as const  // Important: as const for type inference
+})
+
+cli.command(startCommand)
+cli.command(buildCommand)
+cli.command(envCommand)
+cli.command(logsCommand)
+
+await cli.run()
+```
+
+## Commands
+
+### `start` - Development Server
+
+Long-running server process with plugin context access.
+
+**Source:** `commands/start.ts`
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+import { hasConfigStore, hasMetricsStore } from './store-guards.js'
+
+const startCommand = defineCommand({
+  name: 'start',
+  description: 'Start development server with hot reload',
+  options: {
+    port: option(
+      z.coerce.number().min(1000).max(65535).default(3000),
+      { description: 'Port to run the server on', short: 'p' }
+    ),
+    host: option(
+      z.string().default('localhost'),
+      { description: 'Host to bind the server to', short: 'h' }
+    ),
+    watch: option(
+      z.boolean().default(true),
+      { description: 'Enable file watching and hot reload', short: 'w' }
+    ),
+    open: option(
+      z.boolean().default(false),
+      { description: 'Open browser automatically', short: 'o' }
+    )
+  },
+  handler: async ({ flags, spinner, colors, context }) => {
+    const { port, host, watch, open } = flags
+    
+    const startSpinner = spinner('Starting development server...')
+    
+    // Simulate server startup
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    startSpinner.succeed(`Server started on ${colors.cyan(`http://${host}:${port}`)}`)
+    
+    if (watch) {
+      console.log(colors.green('✓ File watching enabled'))
+    }
+    
+    if (open) {
+      console.log(colors.blue('→ Opening browser...'))
+    }
+    
+    // Access plugin context using type guards
+    if (hasMetricsStore(context?.store)) {
+      context.store.metrics.recordEvent('server_started', { port, host })
+    }
+    
+    console.log(colors.dim('\nPress Ctrl+C to stop the server'))
+    
+    // Access config plugin
+    if (hasConfigStore(context?.store)) {
+      console.log(colors.dim(`Config loaded: ${JSON.stringify(context.store.config, null, 2)}`))
+    }
+    
+    // Keep the process alive
+    process.on('SIGINT', () => {
+      console.log(colors.yellow('\nShutting down server...'))
+      process.exit(0)
+    })
+    
+    // Simulate server running
+    await new Promise(() => {}) // Never resolves
+  }
+})
+
+export default startCommand
+```
+
+**Usage:**
+
+```bash
+# Start server
+bun cli.ts start
+
+# Custom port and host
+bun cli.ts start --port 8080 --host 0.0.0.0
+
+# Disable watch, enable open
+bun cli.ts start --watch=false --open
+```
+
+### Type Guards for Plugin Stores
+
+Safely access plugin stores with type guards.
+
+**Source:** `commands/store-guards.ts`
+
+```typescript
+// Type guards for plugin stores
+export function hasMetricsStore(
+  store: any
+): store is { metrics: MetricsStore['metrics'] } {
+  return store && typeof store.metrics === 'object' && 'recordEvent' in store.metrics
+}
+
+export function hasConfigStore(
+  store: any
+): store is { config: any } {
+  return store && 'config' in store
+}
+```
+
+**Usage in commands:**
+
+```typescript
+handler: async ({ context }) => {
+  // Type-safe access to plugin stores
+  if (hasMetricsStore(context?.store)) {
+    context.store.metrics.recordEvent('build_started')
+  }
+  
+  if (hasConfigStore(context?.store)) {
+    const config = context.store.config
+    // Use config...
+  }
+}
+```
+
+### `build` - Production Build
+
+Build with plugin integration and metrics recording.
+
+**Usage:**
+
+```bash
+# Basic build
+bun cli.ts build
+
+# Production build
+bun cli.ts build --output dist --minify --sourcemap --target node
+
+# With compression
+bun cli.ts build --compress
+```
+
+### `env` - Environment Management
+
+Manage environment variables with plugin events.
+
+**Usage:**
+
+```bash
+# Set variable
+bun cli.ts env --set API_KEY=abc123
+
+# Get variable
+bun cli.ts env --get API_KEY
+
+# List all
+bun cli.ts env --list
+
+# Delete variable
+bun cli.ts env --delete API_KEY
+```
+
+### `logs` - Log Viewing
+
+View and follow server logs in real-time.
+
+**Usage:**
+
+```bash
+# View logs
+bun cli.ts logs
+
+# Follow logs
+bun cli.ts logs --follow
+
+# Filter by level
+bun cli.ts logs --level info --lines 100
+
+# Filter by service
+bun cli.ts logs --service server
+```
+
+## Configuration
+
+**Source:** `bunli.config.ts`
+
+```typescript
+import { defineConfig } from '@bunli/core'
+
+export default defineConfig({
+  name: 'dev-server',
+  version: '0.0.1',
+  description: 'Development server with plugins',
+  plugins: [],
+  commands: {
+    entry: './cli.ts',
+    directory: './commands'
+  },
+  build: {
+    entry: 'cli.ts',
+    outdir: 'dist',
+    targets: ['native'],  // Native standalone binary
+    compress: false,
+    minify: true,
+    sourcemap: false
+  }
+})
+```
+
+### Multi-source Configuration
+
+The config plugin loads configuration from multiple sources:
+
+1. `.devserverrc.json`
+2. `devserver.config.json`  
+3. Command-line flags (highest priority)
+
+**Example `.devserverrc.json`:**
+
+```json
+{
+  "port": 3000,
+  "host": "localhost",
+  "watch": true
+}
+```
+
+## Key Patterns
+
+### 1. Creating Custom Plugins
+
+Use `createPlugin<StoreType>()` for type-safe plugins:
+
+```typescript
+import { createPlugin } from '@bunli/core/plugin'
+
+interface MyPluginStore {
+  myFeature: {
+    data: string
+    doSomething: () => void
+  }
+}
+
+export const myPlugin = createPlugin<MyPluginStore>({
+  name: 'my-plugin',
+  store: {
+    myFeature: {
+      data: 'initial',
+      doSomething() {
+        console.log(this.data)
+      }
+    }
+  },
+  beforeCommand({ store, command }) {
+    // Called before each command
+  },
+  afterCommand({ store, command }) {
+    // Called after each command
+  }
+})
+```
+
+### 2. Plugin Lifecycle Hooks
+
+Plugins can hook into command lifecycle:
+
+- `setup({ config })` - Called during CLI initialization
+- `configResolved({ config })` - Called after config is resolved
+- `beforeCommand({ store, command, flags })` - Before command execution
+- `afterCommand({ store, command, exitCode })` - After command execution
+
+### 3. Type-safe Store Access
+
+Use type guards to safely access plugin stores:
+
+```typescript
+// Define type guard
+function hasMyStore(store: any): store is { myFeature: MyStore } {
+  return store && 'myFeature' in store
+}
+
+// Use in command
+handler: async ({ context }) => {
+  if (hasMyStore(context?.store)) {
+    context.store.myFeature.doSomething()
+  }
+}
+```
+
+### 4. Long-running Processes
+
+Handle long-running processes with signal handling:
+
+```typescript
+handler: async ({ spinner, colors }) => {
+  const spin = spinner('Starting server...')
+  
+  // Start server
+  spin.succeed('Server started')
+  
+  // Handle graceful shutdown
+  process.on('SIGINT', () => {
+    console.log(colors.yellow('Shutting down...'))
+    process.exit(0)
+  })
+  
+  // Keep process alive
+  await new Promise(() => {})
+}
+```
+
+### 5. Configuration Merging
+
+Use the config plugin to merge configurations:
+
+```typescript
+import { configMergerPlugin } from '@bunli/plugin-config'
+
+const cli = await createCLI({
+  plugins: [
+    configMergerPlugin({
+      sources: [
+        '.myapprc.json',
+        'myapp.config.json',
+        '~/.config/myapp/config.json'
+      ]
+    })
+  ]
+})
+```
+
+## What You Learned
+
+- ✅ Creating custom plugins with `createPlugin()`
+- ✅ Plugin lifecycle hooks
+- ✅ Type-safe plugin stores
+- ✅ Type guards for store access
+- ✅ Long-running processes
+- ✅ Signal handling (SIGINT)
+- ✅ Multi-source configuration
+- ✅ Built-in plugin integration
+- ✅ Memory management in plugins
+- ✅ Event recording and tracking
+
+## Built-in Plugins Used
+
+### `configMergerPlugin`
+
+Merges configuration from multiple sources.
+
+```typescript
+import { configMergerPlugin } from '@bunli/plugin-config'
+
+configMergerPlugin({
+  sources: ['.devserverrc.json', 'devserver.config.json']
+})
+```
+
+### `aiAgentPlugin`
+
+Detects AI coding assistants and provides context.
+
+```typescript
+import { aiAgentPlugin } from '@bunli/plugin-ai-detect'
+
+aiAgentPlugin({ verbose: true })
+```
+
+## Next Steps
+
+This is the most advanced example. You've learned:
+
+- Complete plugin system patterns
+- Type-safe context access
+- Long-running process management  
+- Configuration strategies
+- Production-ready patterns
+
+**Explore other examples:**
+
+- **[Hello World](/examples/hello-world)** - Basic command structure
+- **[Task Runner](/examples/task-runner)** - Validation and interactivity
+- **[Git Tool](/examples/git-tool)** - External tool integration
+
+## Source Code
+
+View the complete source code on GitHub:
+
+[examples/dev-server](https://github.com/bunlijs/bunli/tree/main/examples/dev-server)

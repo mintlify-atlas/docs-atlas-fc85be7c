@@ -1,0 +1,353 @@
+---
+title: Commands
+description: Define type-safe CLI commands with handlers, options, and metadata
+---
+
+Commands are the building blocks of your CLI application. Bunli provides a type-safe API for defining commands with automatic type inference, nested subcommands, and rich metadata.
+
+## Defining Commands
+
+Use the `defineCommand` function to create a command with full type safety:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+
+const greetCommand = defineCommand({
+  name: 'greet',
+  description: 'A minimal greeting CLI',
+  options: {
+    name: option(
+      z.string().default('world'),
+      { short: 'n', description: 'Who to greet' }
+    ),
+    loud: option(
+      z.coerce.boolean().default(false),
+      { short: 'l', description: 'Shout the greeting' }
+    ),
+    times: option(
+      z.coerce.number().int().positive().default(1),
+      { short: 't', description: 'Number of times to greet' }
+    )
+  },
+  handler: async ({ flags, colors }) => {
+    const greeting = `Hello, ${flags.name}!`
+    const message = flags.loud ? greeting.toUpperCase() : greeting
+    
+    for (let i = 0; i < flags.times; i++) {
+      console.log(colors.cyan(message))
+    }
+  }
+})
+```
+
+<Note>
+The `defineCommand` function is a type-safe helper that preserves option types and enables autocompletion throughout your command definition.
+</Note>
+
+## Command Structure
+
+A command definition includes the following properties:
+
+<ParamField path="name" type="string" required>
+  Unique identifier for the command. Used for routing and execution.
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  Human-readable description shown in help output.
+</ParamField>
+
+<ParamField path="options" type="Options">
+  Command-specific options/flags. See [Options](/concepts/options) for details.
+</ParamField>
+
+<ParamField path="handler" type="Handler<TFlags, TStore>">
+  Async function that executes the command logic. See [Handlers](/concepts/handlers) for details.
+</ParamField>
+
+<ParamField path="render" type="RenderFunction<TFlags, TStore>">
+  Optional TUI render function for interactive terminal interfaces.
+</ParamField>
+
+<ParamField path="alias" type="string | string[]">
+  Alternative names for the command. Useful for shortcuts.
+  
+  ```typescript
+  alias: 'pull'  // Single alias
+  alias: ['s', 'st']  // Multiple aliases
+  ```
+</ParamField>
+
+<ParamField path="commands" type="Command[]">
+  Nested subcommands. Cannot be used with `handler` or `render`.
+</ParamField>
+
+<ParamField path="tui" type="CommandTuiOptions">
+  TUI-specific configuration for terminal rendering.
+  
+  ```typescript
+  tui: {
+    renderer: {
+      bufferMode: 'alternate'  // or 'standard'
+    }
+  }
+  ```
+</ParamField>
+
+## Command Types
+
+Bunli has two types of commands:
+
+### Runnable Commands
+
+Commands that can be executed directly. Must have at least a `handler` or `render` function:
+
+```typescript
+const syncCommand = defineCommand({
+  name: 'sync',
+  description: 'Sync with upstream repository',
+  alias: 'pull',
+  options: {
+    remote: option(
+      z.string().default('origin'),
+      { short: 'r', description: 'Remote name to sync with' }
+    ),
+    branch: option(
+      z.string().optional(),
+      { short: 'b', description: 'Branch to sync (defaults to current branch)' }
+    ),
+    force: option(
+      z.coerce.boolean().default(false),
+      { short: 'f', description: 'Force sync even if there are conflicts' }
+    )
+  },
+  handler: async ({ flags, spinner, shell }) => {
+    const spin = spinner('Syncing with remote...')
+    
+    // Get current branch if not specified
+    const currentBranch = flags.branch || 
+      (await shell`git branch --show-current`).stdout.toString().trim()
+    
+    // Fetch latest changes
+    spin.update('Fetching latest changes...')
+    await shell`git fetch ${flags.remote}`
+    
+    spin.succeed('Sync completed successfully')
+  }
+})
+```
+
+### Command Groups
+
+Commands that contain subcommands but cannot be executed directly:
+
+```typescript
+import { defineGroup } from '@bunli/core'
+
+const gitGroup = defineGroup({
+  name: 'git',
+  description: 'Git utilities',
+  commands: [
+    syncCommand,
+    branchCommand,
+    statusCommand,
+    prCommand
+  ]
+})
+```
+
+<Warning>
+A command group cannot have `handler`, `render`, or `options`. It exists only to organize subcommands.
+</Warning>
+
+## Nested Subcommands
+
+Create hierarchical command structures by nesting commands:
+
+```typescript
+import { defineCommand, defineGroup } from '@bunli/core'
+
+const listBranchesCommand = defineCommand({
+  name: 'list',
+  description: 'List all branches',
+  handler: async ({ shell, colors }) => {
+    const { stdout } = await shell`git branch -a`
+    console.log(colors.cyan(stdout.toString()))
+  }
+})
+
+const createBranchCommand = defineCommand({
+  name: 'create',
+  description: 'Create a new branch',
+  options: {
+    name: option(z.string(), { description: 'Branch name' })
+  },
+  handler: async ({ flags, shell }) => {
+    await shell`git branch ${flags.name}`
+  }
+})
+
+const branchGroup = defineGroup({
+  name: 'branch',
+  description: 'Manage branches',
+  commands: [
+    listBranchesCommand,
+    createBranchCommand
+  ]
+})
+
+// Usage:
+// mycli branch list
+// mycli branch create --name feature/new-feature
+```
+
+## Command Registration
+
+Register commands with your CLI instance:
+
+```typescript
+import { createCLI } from '@bunli/core'
+
+const cli = await createCLI()
+
+// Register individual commands
+cli.command(greetCommand)
+cli.command(syncCommand)
+
+// Register command groups (includes all subcommands)
+cli.command(gitGroup)
+
+// Run the CLI
+await cli.run()
+```
+
+## Command Aliases
+
+Provide shortcuts for frequently used commands:
+
+<Tabs>
+  <Tab title="Single Alias">
+    ```typescript
+    const syncCommand = defineCommand({
+      name: 'sync',
+      alias: 'pull',  // mycli pull works the same as mycli sync
+      description: 'Sync with upstream',
+      handler: async () => {
+        // ...
+      }
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Multiple Aliases">
+    ```typescript
+    const statusCommand = defineCommand({
+      name: 'status',
+      alias: ['s', 'st'],  // mycli s, mycli st, or mycli status
+      description: 'Show git status',
+      handler: async () => {
+        // ...
+      }
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## TUI Rendering
+
+Commands can provide both a CLI handler and a TUI renderer:
+
+```typescript
+import { defineCommand, option } from '@bunli/core'
+import { ProgressBar } from '@bunli/tui'
+import { z } from 'zod'
+
+const greetCommand = defineCommand({
+  name: 'greet',
+  description: 'Interactive greeting',
+  options: {
+    name: option(z.string().default('world'), {
+      description: 'Who to greet'
+    })
+  },
+  // Used in interactive terminals
+  render: ({ flags }) => (
+    <ProgressBar
+      value={progress}
+      label={`Hello, ${flags.name}!`}
+      color="#22c55e"
+    />
+  ),
+  // Fallback for non-interactive environments (CI, pipes, etc.)
+  handler: async ({ flags, colors }) => {
+    console.log(colors.cyan(`Hello, ${flags.name}!`))
+  }
+})
+```
+
+<Note>
+Bunli automatically chooses `render` for interactive terminals and `handler` for non-interactive environments (CI, pipes). You can provide both for the best experience.
+</Note>
+
+## Type Safety
+
+Bunli provides full type inference for command options:
+
+```typescript
+const startCommand = defineCommand({
+  name: 'start',
+  options: {
+    port: option(z.coerce.number().min(1000).max(65535).default(3000)),
+    host: option(z.string().default('localhost'))
+  },
+  handler: async ({ flags }) => {
+    // TypeScript knows:
+    // flags.port is number
+    // flags.host is string
+    const url = `http://${flags.host}:${flags.port}`
+  }
+})
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use descriptive names">
+    Command names should be clear and follow your CLI's naming conventions.
+    ```typescript
+    name: 'sync'        // Good: clear action
+    name: 's'           // Avoid: use as alias instead
+    ```
+  </Step>
+  
+  <Step title="Provide helpful descriptions">
+    Descriptions appear in help output and should be concise but informative.
+    ```typescript
+    description: 'Sync with upstream repository'
+    ```
+  </Step>
+  
+  <Step title="Use const assertions for type safety">
+    Add `as const` to command names for better type inference:
+    ```typescript
+    name: 'sync' as const
+    ```
+  </Step>
+  
+  <Step title="Group related commands">
+    Use command groups to organize complex CLIs:
+    ```typescript
+    defineGroup({
+      name: 'database',
+      commands: [migrateCommand, seedCommand, resetCommand]
+    })
+    ```
+  </Step>
+</Steps>
+
+## See Also
+
+- [Options](/concepts/options) - Define command options and flags
+- [Handlers](/concepts/handlers) - Implement command logic
+- [Configuration](/concepts/configuration) - Configure your CLI
+- [Error Handling](/concepts/error-handling) - Handle errors gracefully

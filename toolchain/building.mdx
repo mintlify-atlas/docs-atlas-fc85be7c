@@ -1,0 +1,452 @@
+---
+title: Building
+description: Build your Bunli CLI for production with compilation, bundling, and optimization
+---
+
+The `bunli build` command compiles and bundles your CLI for production. It supports standalone executable compilation, multi-platform builds, minification, and more.
+
+## Usage
+
+```bash
+bunli build [options]
+```
+
+### Basic Examples
+
+```bash
+# Build with default settings
+bunli build
+
+# Build standalone executable
+bunli build --targets native
+
+# Build for all platforms
+bunli build --targets all
+
+# Build with custom output
+bunli build --outdir dist --minify
+```
+
+## Options
+
+| Option | Alias | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--entry` | `-e` | `string` | auto-detect | Entry file (defaults to auto-detect) |
+| `--outdir` | `-o` | `string` | `./dist` | Output directory |
+| `--outfile` | - | `string` | - | Output filename (for single executable) |
+| `--minify` | `-m` | `boolean` | `true` | Minify output |
+| `--sourcemap` | `-s` | `boolean` | `false` | Generate sourcemaps |
+| `--bytecode` | - | `boolean` | `false` | Enable bytecode compilation (experimental) |
+| `--runtime` | `-r` | `'bun' \| 'node'` | `bun` | Runtime target (for non-compiled builds) |
+| `--targets` | `-t` | `string` | - | Target platforms for compilation (e.g., darwin-arm64,linux-x64) |
+| `--watch` | `-w` | `boolean` | `false` | Watch for changes |
+
+## Build Modes
+
+Bunli supports two build modes:
+
+1. **Bundle Mode** (default) - Bundles your CLI as ESM modules
+2. **Compile Mode** - Creates standalone executables using `--targets`
+
+## Bundle Mode
+
+Bundle mode creates optimized ESM bundles:
+
+```bash
+# Bundle for Bun runtime
+bunli build
+
+# Bundle for Node.js runtime
+bunli build --runtime node
+
+# Custom output location
+bunli build --outdir ./build
+```
+
+### Bundle Implementation
+
+```typescript
+// From packages/cli/src/commands/build.ts:198-230
+const result = await Bun.build({
+  entrypoints: buildEntryPoints,
+  outdir,
+  target: typedFlags.runtime || 'bun',
+  format: 'esm' as const,
+  minify: typedFlags.minify ?? config.build?.minify ?? true,
+  sourcemap: typedFlags.sourcemap ?? config.build?.sourcemap ?? false,
+  external: config.build?.external || [],
+  plugins: [
+    bunliCodegenPlugin({
+      entry: codegenEntry,
+      directory: config.commands?.directory,
+      outputFile: './.bunli/commands.gen.ts',
+      config
+    })
+  ]
+})
+
+if (!result.success) {
+  return failBuild(`Build failed: ${result.logs.join('\n')}`)
+}
+
+for (const output of result.outputs) {
+  if (output.path.endsWith('.js')) {
+    const content = await output.text()
+    const runtime = typedFlags.runtime === 'node' ? 'node' : 'bun'
+    const withoutShebang = content.replace(/^#![^\n]*\n/, '')
+    const executableContent = `#!/usr/bin/env ${runtime}\n${withoutShebang}`
+    await Bun.write(output.path, executableContent)
+    await $`chmod +x ${output.path}`
+  }
+}
+```
+
+Bundle mode:
+- Uses Bun's bundler
+- Outputs ESM format
+- Adds shebang for executable
+- Makes files executable with `chmod +x`
+- Includes codegen plugin
+
+## Compile Mode
+
+Compile mode creates standalone executables that don't require a runtime:
+
+```bash
+# Compile for current platform
+bunli build --targets native
+
+# Compile for specific platforms
+bunli build --targets darwin-arm64,linux-x64
+
+# Compile for all platforms
+bunli build --targets all
+```
+
+### Supported Platforms
+
+- `darwin-arm64` - macOS Apple Silicon
+- `darwin-x64` - macOS Intel
+- `linux-arm64` - Linux ARM64
+- `linux-x64` - Linux x64
+- `windows-x64` - Windows x64
+- `native` - Current platform
+- `all` - All supported platforms
+
+### Compilation Implementation
+
+```typescript
+// From packages/cli/src/commands/build.ts:144-188
+if (isCompiling) {
+  spin.update('Compiling to standalone executable...')
+  let platformTargets: string[] = []
+  if (targets?.includes('all')) {
+    platformTargets = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'windows-x64']
+  } else if (targets?.includes('native')) {
+    platformTargets = [`${process.platform}-${process.arch}`]
+  } else {
+    platformTargets = targets ?? []
+  }
+
+  for (const platform of platformTargets) {
+    spin.update(`Compiling for ${platform}...`)
+    const shouldCreateSubdir = platformTargets.length > 1
+    const targetDir = shouldCreateSubdir ? path.join(outdir, platform) : outdir
+    await $`mkdir -p ${targetDir}`
+
+    const ext = path.extname(entryFile)
+    const nameWithoutExt = ext ? entryFile.slice(0, -ext.length) : entryFile
+    const baseName = path.basename(nameWithoutExt)
+    const isWindows = platform.includes('windows')
+    const outfile = typedFlags.outfile || path.join(targetDir, isWindows ? `${baseName}.exe` : baseName)
+
+    const compileArgs = [
+      'build',
+      entryFile,
+      '--compile',
+      '--outfile', outfile,
+      '--target', `bun-${platform}`
+    ]
+
+    if (typedFlags.minify ?? config.build?.minify ?? true) compileArgs.push('--minify')
+    if (typedFlags.sourcemap ?? config.build?.sourcemap ?? false) compileArgs.push('--sourcemap')
+    if (typedFlags.bytecode) compileArgs.push('--bytecode')
+
+    const externals = config.build?.external || []
+    for (const extModule of externals) {
+      compileArgs.push('--external', extModule)
+    }
+
+    const result = await $`bun ${compileArgs}`.quiet()
+    if (result.exitCode !== 0) {
+      return failBuild(`Compilation failed for ${platform}`)
+    }
+  }
+}
+```
+
+Compilation:
+- Creates true standalone executables
+- No runtime required
+- Platform-specific binaries
+- Organizes by platform subdirectories when building multiple targets
+- Adds `.exe` extension for Windows
+
+## Type Generation
+
+The build command automatically generates TypeScript types before building:
+
+```typescript
+// From packages/cli/src/commands/build.ts:112-126
+const spin = spinner('Generating types...')
+const generator = new Generator({
+  entry: codegenEntry,
+  directory: config.commands?.directory,
+  outputFile: './.bunli/commands.gen.ts',
+  config,
+  generateReport: config.commands?.generateReport
+})
+const generationResult = await generator.run()
+if (Result.isError(generationResult)) {
+  spin.fail('Failed to generate types')
+  return failBuild(generationResult.error.message, generationResult.error)
+}
+spin.succeed('Types generated')
+```
+
+## Build Configuration
+
+Configure builds in `bunli.config.ts`:
+
+```typescript
+import { defineConfig } from 'bunli'
+
+export default defineConfig({
+  build: {
+    entry: './src/cli.ts',
+    outdir: './dist',
+    minify: true,
+    sourcemap: false,
+    targets: ['darwin-arm64', 'linux-x64'],
+    external: ['some-external-package'],
+    compress: false  // Compress multi-platform builds
+  },
+  commands: {
+    entry: './src/cli.ts',
+    directory: './src/commands'
+  }
+})
+```
+
+## Output Structure
+
+### Bundle Mode Output
+
+```
+dist/
+└── cli.js          # Executable bundle with shebang
+```
+
+### Compile Mode - Single Platform
+
+```
+dist/
+└── cli             # Standalone executable (or cli.exe on Windows)
+```
+
+### Compile Mode - Multiple Platforms
+
+```
+dist/
+├── darwin-arm64/
+│   └── cli
+├── darwin-x64/
+│   └── cli
+├── linux-arm64/
+│   └── cli
+├── linux-x64/
+│   └── cli
+└── windows-x64/
+    └── cli.exe
+```
+
+## Compression
+
+When building for multiple platforms, enable compression to create `.tar.gz` archives:
+
+```typescript
+export default defineConfig({
+  build: {
+    targets: ['all'],
+    compress: true
+  }
+})
+```
+
+```typescript
+// From packages/cli/src/commands/build.ts:190-196
+if (config.build?.compress && platformTargets.length > 1) {
+  spin.update('Compressing builds...')
+  for (const platform of platformTargets) {
+    await $`cd ${outdir} && tar -czf ${platform}.tar.gz ${platform}`
+    await $`rm -rf ${outdir}/${platform}`
+  }
+}
+```
+
+Output:
+
+```
+dist/
+├── darwin-arm64.tar.gz
+├── darwin-x64.tar.gz
+├── linux-arm64.tar.gz
+├── linux-x64.tar.gz
+└── windows-x64.tar.gz
+```
+
+## External Packages
+
+Mark packages as external to exclude them from the bundle:
+
+```typescript
+export default defineConfig({
+  build: {
+    external: [
+      'fsevents',        // Native module
+      '@aws-sdk/client-s3'  // Large dependency
+    ]
+  }
+})
+```
+
+## Bytecode Compilation
+
+Enable experimental bytecode compilation:
+
+```bash
+bunli build --bytecode --targets native
+```
+
+Bytecode compilation:
+- Experimental feature
+- May improve startup time
+- Adds `--bytecode` flag to `bun build --compile`
+
+## Minification
+
+Minification is enabled by default. Disable it:
+
+```bash
+bunli build --minify=false
+```
+
+Minification:
+- Reduces bundle size
+- Removes whitespace and shortens names
+- Applies to both bundle and compile modes
+
+## Source Maps
+
+Generate source maps for debugging:
+
+```bash
+bunli build --sourcemap
+```
+
+```typescript
+export default defineConfig({
+  build: {
+    sourcemap: true
+  }
+})
+```
+
+## Output Size
+
+The build command reports output size:
+
+```typescript
+// From packages/cli/src/commands/build.ts:232-234
+spin.succeed('Build complete!')
+const stats = await $`du -sh ${outdir}`.text()
+console.log(colors.dim(`Output size: ${stats.trim()}`))
+```
+
+Example output:
+
+```bash
+✅ Build complete!
+Output size: 4.2M    dist
+```
+
+## Build Cleanup
+
+The output directory is cleaned before each build:
+
+```typescript
+// From packages/cli/src/commands/build.ts:141-142
+await $`rm -rf ${outdir}`
+await $`mkdir -p ${outdir}`
+```
+
+## Advanced Usage
+
+### Multiple Entry Points
+
+Bundle mode supports multiple entry points:
+
+```typescript
+export default defineConfig({
+  build: {
+    entry: ['./src/cli.ts', './src/worker.ts']
+  }
+})
+```
+
+Note: Compile mode only supports a single entry point.
+
+### Custom Output File
+
+```bash
+bunli build --targets native --outfile my-cli
+```
+
+### Watch Mode
+
+Rebuild on file changes:
+
+```bash
+bunli build --watch
+```
+
+## Troubleshooting
+
+### Entry File Not Found
+
+Specify the entry explicitly:
+
+```bash
+bunli build --entry src/cli.ts
+```
+
+### Platform-Specific Issues
+
+Cross-compilation limitations:
+- Can only target platforms supported by Bun
+- Some native modules may not work in compiled builds
+- Use `external` to exclude problematic dependencies
+
+### Build Failures
+
+Check:
+1. All imports resolve correctly
+2. No circular dependencies
+3. External packages are properly configured
+4. TypeScript compilation succeeds
+
+## See Also
+
+- [Development Mode](/toolchain/dev-mode) - Develop with hot reload
+- [Releasing](/toolchain/releasing) - Build and publish releases
+- [Configuration](/configuration) - Build configuration options

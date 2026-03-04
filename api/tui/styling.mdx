@@ -1,0 +1,490 @@
+---
+title: "Styling"
+description: "Text styling and color utilities for TUI components"
+---
+
+## Overview
+
+Bunli TUI provides styling utilities through OpenTUI's text formatting system. You can apply colors, text attributes (bold, italic, underline), and combine them for rich terminal output.
+
+## Imports
+
+```typescript
+import { bold, fg, italic, t, TextAttributes } from '@bunli/tui'
+import { useTuiTheme } from '@bunli/tui'
+```
+
+## Color Functions
+
+### fg
+
+Apply foreground (text) color.
+
+```typescript
+function fg(color: string, text: string): string
+```
+
+#### Parameters
+
+<ParamField path="color" type="string" required>
+  Color value. Supports:
+  - Hex colors: `#ff0000`, `#f00`
+  - Named colors: `red`, `blue`, `green`
+  - RGB: `rgb(255, 0, 0)`
+  - ANSI codes: `\x1b[31m`
+</ParamField>
+
+<ParamField path="text" type="string" required>
+  Text content to colorize
+</ParamField>
+
+#### Example
+
+```tsx
+import { fg } from '@bunli/tui'
+
+function ColoredText() {
+  return (
+    <box style={{ flexDirection: 'column' }}>
+      <text content={fg('#ff0000', 'Red text')} />
+      <text content={fg('#00ff00', 'Green text')} />
+      <text content={fg('#0000ff', 'Blue text')} />
+      <text content={fg('cyan', 'Cyan text')} />
+    </box>
+  )
+}
+```
+
+### Named Colors
+
+OpenTUI supports standard terminal color names:
+
+- `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`
+- `gray`, `grey`
+- Bright variants: `brightRed`, `brightGreen`, etc.
+
+```tsx
+import { fg } from '@bunli/tui'
+
+<text content={fg('red', 'Error')} />
+<text content={fg('green', 'Success')} />
+<text content={fg('yellow', 'Warning')} />
+<text content={fg('blue', 'Info')} />
+```
+
+## Text Attributes
+
+### bold
+
+Apply bold weight.
+
+```typescript
+function bold(text: string): string
+```
+
+#### Example
+
+```tsx
+import { bold } from '@bunli/tui'
+
+function BoldText() {
+  return <text content={bold('Important message')} />
+}
+```
+
+### italic
+
+Apply italic style.
+
+```typescript
+function italic(text: string): string
+```
+
+#### Example
+
+```tsx
+import { italic } from '@bunli/tui'
+
+function ItalicText() {
+  return <text content={italic('Emphasized text')} />
+}
+```
+
+## Template Function
+
+### t
+
+Template tag for combining styles.
+
+```typescript
+function t(strings: TemplateStringsArray, ...values: unknown[]): string
+```
+
+#### Example
+
+```tsx
+import { t, bold, fg } from '@bunli/tui'
+
+const name = 'Alice'
+const score = 100
+
+function Greeting() {
+  return (
+    <text content={t`Hello ${bold(name)}, your score is ${fg('#00ff00', String(score))}`} />
+  )
+}
+```
+
+## TextAttributes Builder
+
+Advanced styling with the `TextAttributes` builder.
+
+```typescript
+class TextAttributes {
+  fg(color: string): this
+  bg(color: string): this
+  bold(): this
+  italic(): this
+  underline(): this
+  dim(): this
+  strikethrough(): this
+  apply(text: string): string
+}
+```
+
+#### Example
+
+```tsx
+import { TextAttributes } from '@bunli/tui'
+
+const style = new TextAttributes()
+  .fg('#ff0000')
+  .bold()
+  .underline()
+
+function StyledText() {
+  return <text content={style.apply('Important!')} />
+}
+```
+
+### Available Methods
+
+<ResponseField name="fg" type="(color: string) => TextAttributes">
+  Set foreground color
+</ResponseField>
+
+<ResponseField name="bg" type="(color: string) => TextAttributes">
+  Set background color
+</ResponseField>
+
+<ResponseField name="bold" type="() => TextAttributes">
+  Apply bold weight
+</ResponseField>
+
+<ResponseField name="italic" type="() => TextAttributes">
+  Apply italic style
+</ResponseField>
+
+<ResponseField name="underline" type="() => TextAttributes">
+  Apply underline
+</ResponseField>
+
+<ResponseField name="dim" type="() => TextAttributes">
+  Apply dim/faint style
+</ResponseField>
+
+<ResponseField name="strikethrough" type="() => TextAttributes">
+  Apply strikethrough
+</ResponseField>
+
+<ResponseField name="apply" type="(text: string) => string">
+  Apply all attributes to text
+</ResponseField>
+
+## Theme Integration
+
+### useTuiTheme
+
+Access theme color tokens for consistent styling.
+
+```typescript
+const { tokens } = useTuiTheme()
+```
+
+#### Available Tokens
+
+<ResponseField name="accent" type="string">
+  Primary accent color
+</ResponseField>
+
+<ResponseField name="background" type="string">
+  Background color
+</ResponseField>
+
+<ResponseField name="backgroundMuted" type="string">
+  Muted background color
+</ResponseField>
+
+<ResponseField name="border" type="string">
+  Border color
+</ResponseField>
+
+<ResponseField name="textPrimary" type="string">
+  Primary text color
+</ResponseField>
+
+<ResponseField name="textMuted" type="string">
+  Muted text color
+</ResponseField>
+
+<ResponseField name="textDanger" type="string">
+  Error/danger text color
+</ResponseField>
+
+<ResponseField name="textSuccess" type="string">
+  Success text color
+</ResponseField>
+
+<ResponseField name="textWarning" type="string">
+  Warning text color
+</ResponseField>
+
+<ResponseField name="textInfo" type="string">
+  Info text color
+</ResponseField>
+
+#### Example
+
+```tsx
+import { useTuiTheme, fg } from '@bunli/tui'
+
+function ThemedText() {
+  const { tokens } = useTuiTheme()
+
+  return (
+    <box style={{ flexDirection: 'column' }}>
+      <text content={fg(tokens.textPrimary, 'Primary text')} />
+      <text content={fg(tokens.textMuted, 'Muted text')} />
+      <text content={fg(tokens.textDanger, 'Error text')} />
+      <text content={fg(tokens.textSuccess, 'Success text')} />
+      <text content={fg(tokens.textWarning, 'Warning text')} />
+      <text content={fg(tokens.accent, 'Accent text')} />
+    </box>
+  )
+}
+```
+
+## Custom Themes
+
+Create custom themes with `createTheme`.
+
+```typescript
+import { createTheme, ThemeProvider } from '@bunli/tui'
+
+const myTheme = createTheme({
+  accent: '#00ffff',
+  textPrimary: '#ffffff',
+  textMuted: '#888888',
+  textDanger: '#ff0000',
+  textSuccess: '#00ff00',
+  textWarning: '#ffaa00',
+  textInfo: '#0088ff',
+  background: '#000000',
+  backgroundMuted: '#1a1a1a',
+  border: '#333333'
+})
+
+function App() {
+  return (
+    <ThemeProvider theme={myTheme}>
+      <YourApp />
+    </ThemeProvider>
+  )
+}
+```
+
+### Built-in Themes
+
+```typescript
+import { darkThemeTokens, lightThemeTokens } from '@bunli/tui'
+
+// Dark theme (default)
+const darkTheme = createTheme(darkThemeTokens)
+
+// Light theme
+const lightTheme = createTheme(lightThemeTokens)
+```
+
+## Combining Styles
+
+### Multiple Attributes
+
+```tsx
+import { bold, fg, italic } from '@bunli/tui'
+
+// Chaining
+const text1 = bold(fg('#ff0000', 'Red and bold'))
+const text2 = italic(bold('Bold and italic'))
+
+// TextAttributes
+const style = new TextAttributes()
+  .fg('#ff0000')
+  .bold()
+  .italic()
+  .underline()
+
+const text3 = style.apply('Fully styled')
+```
+
+### Inline Styles
+
+Use the `fg` and `bg` props on `<text>` elements:
+
+```tsx
+<text content="Colored text" fg="#ff0000" bg="#000000" />
+```
+
+## Text Layout Utilities
+
+Utilities for text measurement and formatting.
+
+```typescript
+import {
+  displayWidth,
+  truncateEnd,
+  padEndTo,
+  formatFixedWidth
+} from '@bunli/tui'
+```
+
+### displayWidth
+
+Get display width accounting for wide characters.
+
+```typescript
+function displayWidth(text: string): number
+```
+
+### truncateEnd
+
+Truncate text with ellipsis.
+
+```typescript
+function truncateEnd(text: string, maxWidth: number): string
+```
+
+### padEndTo
+
+Pad text to specific width.
+
+```typescript
+function padEndTo(text: string, width: number): string
+```
+
+### formatFixedWidth
+
+Format text to fixed width with overflow handling.
+
+```typescript
+function formatFixedWidth(
+  text: string,
+  width: number,
+  options?: { overflow?: 'clip' | 'ellipsis' }
+): string
+```
+
+#### Example
+
+```tsx
+import { formatFixedWidth, displayWidth } from '@bunli/tui'
+
+function Table() {
+  const columns = [
+    { label: 'Name', width: 20 },
+    { label: 'Email', width: 30 }
+  ]
+
+  const rows = [
+    { name: 'Alice Smith', email: 'alice@example.com' },
+    { name: 'Bob Johnson', email: 'bob.johnson@example.com' }
+  ]
+
+  return (
+    <box style={{ flexDirection: 'column' }}>
+      {rows.map((row, i) => (
+        <box key={i} style={{ flexDirection: 'row', gap: 2 }}>
+          <text content={formatFixedWidth(row.name, 20, { overflow: 'ellipsis' })} />
+          <text content={formatFixedWidth(row.email, 30, { overflow: 'ellipsis' })} />
+        </box>
+      ))}
+    </box>
+  )
+}
+```
+
+## Best Practices
+
+<Card title="Performance" icon="gauge">
+  - Cache styled strings instead of recreating on each render
+  - Use theme tokens for colors to enable theme switching
+  - Avoid excessive nesting of style functions
+</Card>
+
+<Card title="Accessibility" icon="universal-access">
+  - Ensure sufficient color contrast
+  - Don't rely solely on color to convey information
+  - Test with different terminal color schemes
+</Card>
+
+<Card title="Consistency" icon="palette">
+  - Use theme tokens for semantic colors
+  - Define a consistent color palette
+  - Use text attributes (bold, italic) to establish hierarchy
+</Card>
+
+<Card title="Terminal Compatibility" icon="terminal">
+  - Test with both light and dark terminal themes
+  - Provide fallbacks for unsupported attributes
+  - Use named colors for better compatibility
+</Card>
+
+## Color Reference
+
+### Standard Colors
+
+```tsx
+import { fg } from '@bunli/tui'
+
+<text content={fg('black', 'Black')} />
+<text content={fg('red', 'Red')} />
+<text content={fg('green', 'Green')} />
+<text content={fg('yellow', 'Yellow')} />
+<text content={fg('blue', 'Blue')} />
+<text content={fg('magenta', 'Magenta')} />
+<text content={fg('cyan', 'Cyan')} />
+<text content={fg('white', 'White')} />
+```
+
+### Bright Colors
+
+```tsx
+<text content={fg('brightBlack', 'Bright Black')} />
+<text content={fg('brightRed', 'Bright Red')} />
+<text content={fg('brightGreen', 'Bright Green')} />
+<text content={fg('brightYellow', 'Bright Yellow')} />
+<text content={fg('brightBlue', 'Bright Blue')} />
+<text content={fg('brightMagenta', 'Bright Magenta')} />
+<text content={fg('brightCyan', 'Bright Cyan')} />
+<text content={fg('brightWhite', 'Bright White')} />
+```
+
+### Hex Colors
+
+```tsx
+<text content={fg('#ff0000', 'Red #ff0000')} />
+<text content={fg('#00ff00', 'Green #00ff00')} />
+<text content={fg('#0000ff', 'Blue #0000ff')} />
+<text content={fg('#ffaa00', 'Orange #ffaa00')} />
+<text content={fg('#ff00ff', 'Magenta #ff00ff')} />
+<text content={fg('#00ffff', 'Cyan #00ffff')} />
+```

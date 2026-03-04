@@ -1,0 +1,474 @@
+---
+title: Global Flags
+description: Add flags that are available to all commands in your CLI
+---
+
+Global flags are options available to every command in your CLI. Bunli includes built-in global flags like `--help` and `--version`, and you can add custom ones.
+
+## Built-in Global Flags
+
+Bunli automatically provides these flags:
+
+```typescript
+// Built-in global flags
+--help, -h      Show command help
+--version, -v   Show CLI version
+```
+
+**Source:** `packages/core/src/global-flags.ts:7-18`
+
+## How Global Flags Work
+
+Global flags are merged with command-specific options:
+
+```typescript
+// packages/core/src/cli.ts
+const mergedOptions = {
+  ...GLOBAL_FLAGS,        // Global flags
+  ...(command.options || {})  // Command options
+}
+
+const parsed = await parseArgs(argv, mergedOptions, command.name)
+```
+
+**Source:** `packages/core/src/cli.ts:505-506`
+
+## Built-in Global Flags Definition
+
+Here's how Bunli defines global flags internally:
+
+```typescript
+import { z } from 'zod'
+import type { CLIOption } from './types.js'
+
+export const GLOBAL_FLAGS = {
+  help: {
+    schema: z.boolean().default(false),
+    short: 'h',
+    description: 'Show help'
+  },
+  version: {
+    schema: z.boolean().default(false),
+    short: 'v',
+    description: 'Show version'
+  }
+} satisfies Record<string, CLIOption>
+
+export type GlobalFlags = {
+  help: boolean
+  version: boolean
+}
+```
+
+**Source:** `packages/core/src/global-flags.ts`
+
+## Help Flag Behavior
+
+The `--help` flag shows contextual help:
+
+```bash
+# Root help
+$ cli --help
+mycli v1.0.0
+A description of my CLI
+
+Commands:
+  build     Build the project
+  dev       Start development server
+  test      Run tests
+
+# Command help
+$ cli build --help
+Usage: cli build [options]
+
+Build the project
+
+Options:
+  --outdir, -o    Output directory
+  --minify, -m    Minify output
+  --help, -h      Show help
+```
+
+**Source:** `packages/core/src/cli.ts:686-703`
+
+## Version Flag Behavior
+
+The `--version` flag displays your CLI version:
+
+```bash
+$ cli --version
+mycli v1.0.0
+```
+
+```typescript
+import { createCLI } from '@bunli/core'
+
+const cli = await createCLI({
+  name: 'mycli',
+  version: '1.0.0',  // Version shown by --version
+  description: 'My CLI tool'
+})
+```
+
+**Source:** `packages/core/src/cli.ts:681-684`
+
+## Adding Custom Global Flags
+
+To add your own global flags, use a plugin:
+
+<Steps>
+  <Step title="Create a plugin with global options">
+    ```typescript
+    // plugins/global-flags.ts
+    import { createPlugin } from '@bunli/core'
+    import { option } from '@bunli/core'
+    import { z } from 'zod'
+    
+    export const globalFlagsPlugin = createPlugin({
+      name: 'global-flags',
+      setup: async ({ config }) => {
+        return {
+          config: {
+            ...config,
+            // Add custom global behavior here if needed
+          },
+          commands: [],
+          middlewares: []
+        }
+      }
+    })
+    ```
+  </Step>
+  
+  <Step title="Modify command options at registration">
+    ```typescript
+    // Alternative: Extend options in each command
+    import { defineCommand, option } from '@bunli/core'
+    import { z } from 'zod'
+    
+    // Create shared options
+    export const CUSTOM_GLOBAL_FLAGS = {
+      verbose: option(
+        z.boolean().default(false),
+        { short: 'V', description: 'Verbose output' }
+      ),
+      quiet: option(
+        z.boolean().default(false),
+        { short: 'q', description: 'Quiet mode' }
+      )
+    }
+    
+    // Use in commands
+    const buildCommand = defineCommand({
+      name: 'build',
+      description: 'Build project',
+      options: {
+        ...CUSTOM_GLOBAL_FLAGS,  // Include in every command
+        outdir: option(z.string().default('dist'), {})
+      },
+      handler: async ({ flags }) => {
+        if (flags.verbose) {
+          console.log('Building with verbose output...')
+        }
+      }
+    })
+    ```
+  </Step>
+  
+  <Step title="Access in command handlers">
+    ```typescript
+    const deployCommand = defineCommand({
+      name: 'deploy',
+      description: 'Deploy application',
+      options: {
+        ...CUSTOM_GLOBAL_FLAGS,
+        env: option(z.enum(['dev', 'prod']).default('dev'), {})
+      },
+      handler: async ({ flags, colors }) => {
+        if (flags.quiet) {
+          // Suppress output
+        } else if (flags.verbose) {
+          console.log(colors.dim('Deploying...'))
+          console.log(colors.dim(`Environment: ${flags.env}`))
+        } else {
+          console.log('Deploying...')
+        }
+      }
+    })
+    ```
+  </Step>
+</Steps>
+
+## Global Flags with Plugin Middleware
+
+Use plugin middleware to handle global behavior:
+
+```typescript
+import { createPlugin } from '@bunli/core'
+
+interface LoggerStore {
+  logger: {
+    level: 'quiet' | 'normal' | 'verbose'
+    log: (message: string) => void
+  }
+}
+
+export const loggerPlugin = createPlugin<LoggerStore>({
+  name: 'logger',
+  setup: async () => {
+    return {
+      store: {
+        logger: {
+          level: 'normal',
+          log: (message: string) => console.log(message)
+        }
+      },
+      commands: [],
+      middlewares: [
+        {
+          name: 'logger-middleware',
+          beforeCommand: async (context, command, args, flags) => {
+            // Check for verbose/quiet flags
+            if (flags.verbose) {
+              context.store.logger.level = 'verbose'
+            } else if (flags.quiet) {
+              context.store.logger.level = 'quiet'
+            }
+            
+            if (context.store.logger.level === 'verbose') {
+              console.log(`Running command: ${command.name}`)
+              console.log(`Arguments: ${JSON.stringify(args)}`)
+              console.log(`Flags: ${JSON.stringify(flags)}`)
+            }
+          },
+          afterCommand: async (context, { exitCode }) => {
+            if (context.store.logger.level === 'verbose') {
+              console.log(`Command finished with exit code: ${exitCode}`)
+            }
+          }
+        }
+      ]
+    }
+  }
+})
+```
+
+## Practical Example: Debug Mode
+
+Add a global debug flag:
+
+```typescript
+import { createCLI, defineCommand, option } from '@bunli/core'
+import { z } from 'zod'
+import { createPlugin } from '@bunli/core'
+
+// Create debug plugin
+interface DebugStore {
+  debug: {
+    enabled: boolean
+    log: (message: string) => void
+  }
+}
+
+const debugPlugin = createPlugin<DebugStore>({
+  name: 'debug',
+  setup: async () => {
+    return {
+      store: {
+        debug: {
+          enabled: false,
+          log: (message: string) => {
+            if (this.enabled) {
+              console.log(`[DEBUG] ${message}`)
+            }
+          }
+        }
+      },
+      commands: [],
+      middlewares: [
+        {
+          name: 'debug-middleware',
+          beforeCommand: async (context, command, args, flags) => {
+            // Enable debug mode from flag
+            if (flags.debug) {
+              context.store.debug.enabled = true
+              console.log('[DEBUG] Debug mode enabled')
+            }
+          }
+        }
+      ]
+    }
+  }
+})
+
+// Shared debug flag
+const DEBUG_FLAG = {
+  debug: option(
+    z.boolean().default(false),
+    { short: 'D', description: 'Enable debug mode' }
+  )
+}
+
+// Use in commands
+const buildCommand = defineCommand({
+  name: 'build',
+  description: 'Build project',
+  options: {
+    ...DEBUG_FLAG,
+    outdir: option(z.string().default('dist'), {})
+  },
+  handler: async ({ flags, context }) => {
+    context?.store.debug.log('Starting build...')
+    // Build logic
+    context?.store.debug.log('Build complete')
+  }
+})
+
+const cli = await createCLI({
+  name: 'mycli',
+  version: '1.0.0',
+  plugins: [debugPlugin]
+})
+
+cli.command(buildCommand)
+await cli.run()
+```
+
+## Accessing Global Flags
+
+Global flags appear alongside command options:
+
+```typescript
+const myCommand = defineCommand({
+  name: 'example',
+  options: {
+    name: option(z.string(), {})
+  },
+  handler: async ({ flags }) => {
+    // Access both command options and global flags
+    console.log(flags.name)    // Command option
+    console.log(flags.help)    // Global flag (always present)
+    console.log(flags.version) // Global flag (always present)
+  }
+})
+```
+
+## Flag Priority
+
+Command options override global flags with the same name:
+
+```typescript
+// Global flags
+const GLOBAL_FLAGS = {
+  output: option(z.string().default('stdout'), {})
+}
+
+// Command with same option name
+const myCommand = defineCommand({
+  name: 'example',
+  options: {
+    output: option(z.string().default('file.txt'), {})  // Overrides global
+  },
+  handler: async ({ flags }) => {
+    console.log(flags.output)  // Uses command's default: 'file.txt'
+  }
+})
+```
+
+**Note:** Command options are merged after global flags in the source.
+
+**Source:** `packages/core/src/cli.ts:505-506`
+
+## Environment-Based Defaults
+
+Set global flag defaults from environment variables:
+
+```typescript
+const GLOBAL_FLAGS = {
+  verbose: option(
+    z.boolean().default(process.env.VERBOSE === 'true'),
+    { short: 'V', description: 'Verbose output' }
+  ),
+  color: option(
+    z.boolean().default(process.env.NO_COLOR !== '1'),
+    { description: 'Enable colored output' }
+  )
+}
+```
+
+## Testing Global Flags
+
+```typescript
+import { describe, test, expect } from 'bun:test'
+import { createCLI } from '@bunli/core'
+import myCommand from './commands/my-command.js'
+
+describe('Global flags', () => {
+  test('help flag shows help', async () => {
+    const cli = await createCLI({
+      name: 'test',
+      version: '1.0.0'
+    })
+    
+    cli.command(myCommand)
+    
+    // Execute with help flag
+    await cli.run(['my-command', '--help'])
+    // Should show help (captured in test output)
+  })
+  
+  test('version flag shows version', async () => {
+    const cli = await createCLI({
+      name: 'test',
+      version: '2.0.0'
+    })
+    
+    await cli.run(['--version'])
+    // Should output: test v2.0.0
+  })
+})
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep global flags minimal">
+    Only add flags that truly apply to every command. Most options should be command-specific.
+  </Accordion>
+  
+  <Accordion title="Use short aliases wisely">
+    Reserve single-letter aliases (`-v`, `-h`) for the most common flags.
+  </Accordion>
+  
+  <Accordion title="Document global flags">
+    Make sure users know about global flags by including them in your CLI's main help output.
+  </Accordion>
+  
+  <Accordion title="Avoid conflicts">
+    Check that global flag names don't conflict with common command option names.
+  </Accordion>
+  
+  <Accordion title="Use plugins for complex behavior">
+    For global flags that need logic (like debug mode), implement them with plugin middleware.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Defining Commands" icon="terminal" href="/guides/defining-commands">
+    Learn how to create commands that use global flags
+  </Card>
+  
+  <Card title="Working with Options" icon="sliders" href="/guides/working-with-options">
+    Master all types of command options
+  </Card>
+  
+  <Card title="Plugins" icon="plug" href="/core/plugins">
+    Use plugins to implement global behavior
+  </Card>
+  
+  <Card title="Building Binaries" icon="box" href="/guides/building-binaries">
+    Compile your CLI with global flags
+  </Card>
+</CardGroup>
